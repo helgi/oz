@@ -27,10 +27,6 @@ import errno
 import stat
 import shutil
 import pycurl
-try:
-    import configparser
-except ImportError:
-    import ConfigParser as configparser
 import collections
 
 def generate_full_auto_path(relative):
@@ -543,29 +539,6 @@ def write_cpio(inputdict, outputfile):
 
     outf.close()
 
-def config_get_key(config, section, key, default):
-    """
-    Function to retrieve config parameters out of the config file.
-    """
-    if config is not None and config.has_section(section) and config.has_option(section, key):
-        return config.get(section, key)
-    else:
-        return default
-
-def config_get_boolean_key(config, section, key, default):
-    """
-    Function to retrieve boolean config parameters out of the config file.
-    """
-    value = config_get_key(config, section, key, None)
-    if value is None:
-        return default
-
-    retval = string_to_bool(value)
-    if retval is None:
-        raise Exception("Configuration parameter '%s' must be True, Yes, False, or No" % (key))
-
-    return retval
-
 def rmtree_and_sync(directory):
     shutil.rmtree(directory)
     # after we do the rmtree, there are usually a lot of metadata updates
@@ -578,42 +551,6 @@ def rmtree_and_sync(directory):
     fd = os.open(os.path.dirname(directory), os.O_RDONLY)
     os.fsync(fd)
     os.close(fd)
-
-def parse_config(config_file):
-    if config_file is None:
-        if os.geteuid() == 0:
-            config_file = "/etc/oz/oz.cfg"
-        else:
-            config_file = "~/.oz/oz.cfg"
-    # if config_file was not None on input, then it was provided by the caller
-    # and we use that instead
-
-    config_file = os.path.expanduser(config_file)
-
-    config = configparser.SafeConfigParser()
-    if os.access(config_file, os.F_OK):
-        config.read(config_file)
-
-    return config
-
-def default_output_dir():
-    if os.geteuid() == 0:
-        directory = "/var/lib/libvirt/images"
-    else:
-        directory = "~/.oz/images"
-
-    return os.path.expanduser(directory)
-
-def default_data_dir():
-    if os.geteuid() == 0:
-        directory = "/var/lib/oz"
-    else:
-        directory = "~/.oz"
-
-    return os.path.expanduser(directory)
-
-def default_screenshot_dir():
-    return os.path.join(default_data_dir(), "screenshots")
 
 def http_get_header(url, redirect=True):
     """
