@@ -35,9 +35,10 @@ from os.path import join, exists, isfile
 import oz.Guest
 import oz.ozutil
 import oz.linuxutil
-from oz.ozutil import subprocess_check_output, copy_modify_file, mkdir_p, generate_full_auto_path, config_get_key
-from oz.ozutil import ssh_execute_command, scp_copy_file, http_download_file, http_get_header, write_cpio
+from oz.ozutil import copy_modify_file, mkdir_p, generate_full_auto_path, config_get_key
+from oz.ozutil import http_download_file, http_get_header, write_cpio
 from oz.OzException import OzException
+from oz.utils.cmd import cmd, CommandException
 
 class RedHatCDGuest(oz.Guest.CDGuest):
     """
@@ -90,14 +91,14 @@ Subsystem	sftp	/usr/libexec/openssh/sftp-server
         Method to create a new ISO based on the modified CD/DVD.
         """
         self.log.debug("Generating new ISO")
-        subprocess_check_output(["genisoimage", "-r", "-T", "-J",
-                                 "-V", "Custom", "-no-emul-boot",
-                                 "-b", "isolinux/isolinux.bin",
-                                 "-c", "isolinux/boot.cat",
-                                 "-boot-load-size", "4",
-                                 "-boot-info-table", "-v", "-v",
-                                 "-o", self.output_iso,
-                                 self.iso_contents])
+        cmd.run(["genisoimage", "-r", "-T", "-J",
+                     "-V", "Custom", "-no-emul-boot",
+                     "-b", "isolinux/isolinux.bin",
+                     "-c", "isolinux/boot.cat",
+                     "-boot-load-size", "4",
+                     "-boot-info-table", "-v", "-v",
+                     "-o", self.output_iso,
+                     self.iso_contents])
 
     def _check_iso_tree(self, customize_or_icicle):
         kernel = join(self.iso_contents, "isolinux", "vmlinuz")
@@ -428,7 +429,7 @@ echo -n "!$ADDR,%s!" > /dev/ttyS1
         """
         Method to execute a command on the guest and return the output.
         """
-        return ssh_execute_command(guestaddr, self.sshprivkey, command, timeout, tunnels)
+        return cmd.ssh(guestaddr, self.sshprivkey, command, timeout, tunnels, self.log.debug)
 
     def do_icicle(self, guestaddr):
         """
@@ -436,34 +437,27 @@ echo -n "!$ADDR,%s!" > /dev/ttyS1
         XML.
         """
         self.log.debug("Generating ICICLE")
-        stdout, stderr, retcode = self.guest_execute_command(guestaddr,
-                                                             'rpm -qa',
-                                                             timeout=30)
 
-<<<<<<< HEAD
-        package_split = stdout.split("\n")
+        response = self.guest_execute_command(guestaddr, 'rpm -qa', timeout=30)
+        package_split = response.output.split("\n")
 
         extrasplit = []
         if self.tdl.icicle_extra_cmd:
-            extrastdout, stderr, retcode = self.guest_execute_command(guestaddr,
+            response = self.guest_execute_command(guestaddr,
                                                                       self.tdl.icicle_extra_cmd,
                                                                       timeout=30)
-            extrasplit = extrastdout.split("\n")
+            extrasplit = response.split("\n")
 
             if len(package_split) != len(extrasplit):
                 raise oz.OzException.OzException("Invalid extra package command; it must return the same set of packages as 'rpm -qa'")
 
-        return self._output_icicle_xml(package_split, self.tdl.description,
-                                       extrasplit)
-=======
-        return self._output_icicle_xml(stdout.split("\n"), self.tdl.description)
->>>>>>> Clean up imports and various other smaller items
+        return self._output_icicle_xml(package_split, self.tdl.description, extrasplit)
 
     def guest_live_upload(self, guestaddr, file_to_upload, destination, timeout=10):
         """
         Method to copy a file to the live guest.
         """
-        return scp_copy_file(guestaddr, self.sshprivkey, file_to_upload, destination, timeout)
+        return cmd.scp(guestaddr, self.sshprivkey, file_to_upload, destination, timeout, self.log.debug)
 
     def _customize_files(self, guestaddr):
         """
@@ -875,7 +869,7 @@ class RedHatCDYumGuest(RedHatCDGuest):
             # if we reach here, then the perform succeeded, which means we
             # could reach the repo from the guest
             guest = True
-        except oz.ozutil.SubprocessException as err:
+        except CommandException as err:
             # if we got an exception, then we could not reach the repo from
             self.log.debug("Unable to route to the repo host from the guest, will attempt to establish an SSH tunnel")
             self.log.debug(err)
@@ -1105,7 +1099,7 @@ class RedHatCDYumGuest(RedHatCDGuest):
         success = False
         while count > 0:
             try:
-                stdout, stderr, retcode = self.guest_execute_command(guestaddr, 'ls', timeout=1)
+                self.guest_execute_command(guestaddr, 'ls', timeout=1)
                 self.log.debug("Succeeded")
                 success = True
                 break
@@ -1262,7 +1256,7 @@ class RedHatFDGuest(oz.Guest.FDGuest):
         else:
             shutil.copy(self.auto, output_ks)
 
-        subprocess_check_output(["mcopy", "-i", self.output_floppy, output_ks, "::KS.CFG"])
+        cmd.run(["mcopy", "-i", self.output_floppy, output_ks, "::KS.CFG"])
 
         self.log.debug("Modifying the syslinux.cfg")
 
@@ -1278,13 +1272,10 @@ class RedHatFDGuest(oz.Guest.FDGuest):
 
         # sometimes, syslinux.cfg on the floppy gets marked read-only.  Avoid
         # problems with the subsequent mcopy by marking it read/write.
-        subprocess_check_output(["mattrib", "-r", "-i",
-                                 self.output_floppy,
-                                 "::SYSLINUX.CFG"])
-
-        subprocess_check_output(["mcopy", "-n", "-o", "-i",
-                                 self.output_floppy, syslinux,
-                                 "::SYSLINUX.CFG"])
+        cmd.run(["mattrib", "-r", "-i", self.output_floppy, "::SYSLINUX.CFG"])
+        cmd.run(["mcopy", "-n", "-o", "-i",
+                     self.output_floppy, syslinux,
+                     "::SYSLINUX.CFG"])
 
     def generate_install_media(self, force_download=False,
                                customize_or_icicle=False):

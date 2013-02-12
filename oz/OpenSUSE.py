@@ -28,8 +28,10 @@ from os.path import join
 
 import oz.Guest
 import oz.linuxutil
-from oz.ozutil import generate_full_auto_path, copy_modify_file, subprocess_check_output, ssh_execute_command, scp_copy_file
+from oz.ozutil import generate_full_auto_path
 from oz.OzException import OzException
+from oz.utils.cmd import cmd
+
 
 class OpenSUSEGuest(oz.Guest.CDGuest):
     """
@@ -90,16 +92,16 @@ class OpenSUSEGuest(oz.Guest.CDGuest):
         Method to create a new ISO based on the modified CD/DVD.
         """
         self.log.info("Generating new ISO")
-        subprocess_check_output(["genisoimage", "-r", "-V", "Custom",
-                                 "-J", "-no-emul-boot",
-                                 "-b", "boot/" + self.tdl.arch + "/loader/isolinux.bin",
-                                 "-c", "boot/" + self.tdl.arch + "/loader/boot.cat",
-                                 "-boot-load-size", "4",
-                                 "-boot-info-table", "-graft-points",
-                                 "-iso-level", "4", "-pad",
-                                 "-allow-leading-dots", "-l",
-                                 "-o", self.output_iso,
-                                 self.iso_contents])
+        cmd.run(["genisoimage", "-r", "-V", "Custom",
+                     "-J", "-no-emul-boot",
+                     "-b", "boot/" + self.tdl.arch + "/loader/isolinux.bin",
+                     "-c", "boot/" + self.tdl.arch + "/loader/boot.cat",
+                     "-boot-load-size", "4",
+                     "-boot-info-table", "-graft-points",
+                     "-iso-level", "4", "-pad",
+                     "-allow-leading-dots", "-l",
+                     "-o", self.output_iso,
+                     self.iso_contents])
 
     def install(self, timeout=None, force=False):
         """
@@ -134,11 +136,11 @@ class OpenSUSEGuest(oz.Guest.CDGuest):
                     if domid == libvirt_dom.ID():
                         raise
 
-    def guest_execute_command(self, guestaddr, command, timeout=10):
+    def guest_execute_command(self, guestaddr, command, timeout=10, tunnels=None):
         """
         Method to execute a command on the guest and return the output.
         """
-        return ssh_execute_command(guestaddr, self.sshprivkey, command, timeout)
+        return cmd.ssh(guestaddr, self.sshprivkey, command, timeout, tunnels, self.log.debug)
 
     def _image_ssh_teardown_step_1(self, g_handle):
         """
@@ -220,11 +222,9 @@ class OpenSUSEGuest(oz.Guest.CDGuest):
         XML.
         """
         self.log.debug("Generating ICICLE")
-        stdout, stderr, retcode = self.guest_execute_command(guestaddr,
-                                                             'rpm -qa',
-                                                             timeout=30)
+        response = self.guest_execute_command(guestaddr, 'rpm -qa', timeout=30)
 
-        return self._output_icicle_xml(stdout.split("\n"),
+        return self._output_icicle_xml(response.output.split("\n"),
                                        self.tdl.description)
 
     def _image_ssh_setup_step_1(self, g_handle):
@@ -375,7 +375,7 @@ AcceptEnv LC_IDENTIFICATION LC_ALL
         """
         Method to copy a file to the live guest.
         """
-        return scp_copy_file(guestaddr, self.sshprivkey, file_to_upload, destination, timeout)
+        return cmd.scp(guestaddr, self.sshprivkey, file_to_upload, destination, timeout, self.log.debug)
 
     def _customize_files(self, guestaddr):
         """
@@ -405,10 +405,9 @@ AcceptEnv LC_IDENTIFICATION LC_ALL
         if packstr != '':
             # due to a bug in OpenSUSE 11.1, we want to remove the default
             # CD repo first
-            stdout, stderr, retcode = self.guest_execute_command(guestaddr,
-                                                                 'zypper repos -d')
+            response = self.guest_execute_command(guestaddr, 'zypper repos -d')
             removerepos = []
-            for line in stdout.split('\n'):
+            for line in response.output.split('\n'):
                 if re.match("^[0-9]+", line):
                     split = line.split('|')
 
@@ -443,7 +442,7 @@ AcceptEnv LC_IDENTIFICATION LC_ALL
         success = False
         while count > 0:
             try:
-                stdout, stderr, retcode = self.guest_execute_command(guestaddr, 'ls', timeout=1)
+                self.guest_execute_command(guestaddr, 'ls', timeout=1)
                 self.log.debug("Succeeded")
                 success = True
                 break

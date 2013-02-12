@@ -27,8 +27,10 @@ import shutil
 from os.path import join
 
 import oz.Guest
-from oz.ozutil import generate_full_auto_path, copy_modify_file, subprocess_check_output
+from oz.ozutil import generate_full_auto_path, copy_modify_file
 from oz.OzException import OzException
+from oz.utils.cmd import cmd
+
 
 class Windows(oz.Guest.CDGuest):
     """
@@ -64,16 +66,16 @@ class Windows_v5(Windows):
         Method to create a new ISO based on the modified CD/DVD.
         """
         self.log.debug("Generating new ISO")
-        subprocess_check_output(["genisoimage",
-                                 "-b", "cdboot/boot.bin",
-                                 "-no-emul-boot", "-boot-load-seg",
-                                 "1984", "-boot-load-size", "4",
-                                 "-iso-level", "2", "-J", "-l", "-D",
-                                 "-N", "-joliet-long",
-                                 "-relaxed-filenames", "-v", "-v",
-                                 "-V", "Custom",
-                                 "-o", self.output_iso,
-                                 self.iso_contents])
+        cmd.run(["genisoimage",
+                     "-b", "cdboot/boot.bin",
+                     "-no-emul-boot", "-boot-load-seg",
+                     "1984", "-boot-load-size", "4",
+                     "-iso-level", "2", "-J", "-l", "-D",
+                     "-N", "-joliet-long",
+                     "-relaxed-filenames", "-v", "-v",
+                     "-V", "Custom",
+                     "-o", self.output_iso,
+                     self.iso_contents])
 
     def generate_diskimage(self, size=10, force=False):
         """
@@ -165,15 +167,15 @@ class Windows_v6(Windows):
         self.log.debug("Generating new ISO")
         # NOTE: Windows 2008 is very picky about which arguments to genisoimage
         # will generate a bootable CD, so modify these at your own risk
-        subprocess_check_output(["genisoimage",
-                                 "-b", "cdboot/boot.bin",
-                                 "-no-emul-boot", "-c", "BOOT.CAT",
-                                 "-iso-level", "2", "-J", "-l", "-D",
-                                 "-N", "-joliet-long",
-                                 "-relaxed-filenames", "-v", "-v",
-                                 "-V", "Custom", "-udf",
-                                 "-o", self.output_iso,
-                                 self.iso_contents])
+        cmd.run(["genisoimage",
+                     "-b", "cdboot/boot.bin",
+                     "-no-emul-boot", "-c", "BOOT.CAT",
+                     "-iso-level", "2", "-J", "-l", "-D",
+                     "-N", "-joliet-long",
+                     "-relaxed-filenames", "-v", "-v",
+                     "-V", "Custom", "-udf",
+                     "-o", self.output_iso,
+                     self.iso_contents])
 
     def _modify_iso(self):
         """

@@ -32,29 +32,6 @@ def test_auto_none():
     with py.test.raises(Exception):
         oz.ozutil.generate_full_auto_path(None)
 
-# test oz.ozutil.executable_exists
-def test_exe_exists_bin_true():
-    oz.ozutil.executable_exists('/bin/true')
-
-def test_exe_exists_foo():
-    with py.test.raises(Exception):
-        oz.ozutil.executable_exists('foo')
-
-def test_exe_exists_full_foo():
-    with py.test.raises(Exception):
-        oz.ozutil.executable_exists('/bin/foo')
-
-def test_exe_exists_not_x():
-    with py.test.raises(Exception):
-        oz.ozutil.executable_exists('/etc/hosts')
-
-def test_exe_exists_relative_false():
-    oz.ozutil.executable_exists('false')
-
-def test_exe_exists_none():
-    with py.test.raises(Exception):
-        oz.ozutil.executable_exists(None)
-
 # test oz.ozutil.copyfile_sparse
 def test_copy_sparse_none_src():
     with py.test.raises(Exception):

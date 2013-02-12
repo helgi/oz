@@ -28,9 +28,11 @@ from os.path import join, isdir, dirname
 
 import oz.Guest
 import oz.linuxutil
-from oz.ozutil import generate_full_auto_path, copy_modify_file, subprocess_check_output, mkdir_p
-from oz.ozutil import ssh_execute_command, scp_copy_file, http_download_file, http_get_header, write_cpio
+from oz.ozutil import generate_full_auto_path, copy_modify_file, mkdir_p
+from oz.ozutil import http_download_file, http_get_header, write_cpio
 from oz.OzException import OzException
+from oz.utils.cmd import cmd
+
 
 class UbuntuGuest(oz.Guest.CDGuest):
     """
@@ -179,14 +181,14 @@ Subsystem       sftp    /usr/libexec/openssh/sftp-server
         Method to create a new ISO based on the modified CD/DVD.
         """
         self.log.info("Generating new ISO")
-        subprocess_check_output(["genisoimage", "-r", "-V", "Custom",
-                                 "-J", "-l", "-no-emul-boot",
-                                 "-b", "isolinux/isolinux.bin",
-                                 "-c", "isolinux/boot.cat",
-                                 "-boot-load-size", "4",
-                                 "-cache-inodes", "-boot-info-table",
-                                 "-v", "-v", "-o", self.output_iso,
-                                 self.iso_contents])
+        cmd.run(["genisoimage", "-r", "-V", "Custom",
+                     "-J", "-l", "-no-emul-boot",
+                     "-b", "isolinux/isolinux.bin",
+                     "-c", "isolinux/boot.cat",
+                     "-boot-load-size", "4",
+                     "-cache-inodes", "-boot-info-table",
+                     "-v", "-v", "-o", self.output_iso,
+                     self.iso_contents])
 
     def install(self, timeout=None, force=False):
         """
@@ -416,7 +418,7 @@ echo -n "!$ADDR,%s!" > /dev/ttyS1
         success = False
         while count > 0:
             try:
-                stdout, stderr, retcode = self.guest_execute_command(guestaddr, 'ls', timeout=1)
+                self.guest_execute_command(guestaddr, 'ls', timeout=1)
                 self.log.debug("Succeeded")
                 success = True
                 break
@@ -558,7 +560,7 @@ echo -n "!$ADDR,%s!" > /dev/ttyS1
         """
         Method to execute a command on the guest and return the output.
         """
-        return ssh_execute_command(guestaddr, self.sshprivkey, command, timeout, tunnels)
+        return cmd.ssh(guestaddr, self.sshprivkey, command, timeout, tunnels, self.log.debug)
 
     def do_icicle(self, guestaddr):
         """
@@ -566,9 +568,9 @@ echo -n "!$ADDR,%s!" > /dev/ttyS1
         XML.
         """
         self.log.debug("Generating ICICLE")
-        stdout, stderr, retcode = self.guest_execute_command(guestaddr,
-                                                             'dpkg --get-selections',
-                                                             timeout=30)
+        response = self.guest_execute_command(guestaddr,
+                                              'dpkg --get-selections',
+                                              timeout=30)
 
         # the data we get back from dpkg is in the form of:
         #
@@ -577,7 +579,7 @@ echo -n "!$ADDR,%s!" > /dev/ttyS1
         # so we have to strip out the tabs and the install before
         # passing it on to output_icicle_xml
         packages = []
-        for line in stdout.split("\n"):
+        for line in response.output.split("\n"):
             packages.append(line.split("\t")[0])
 
         return self._output_icicle_xml(packages, self.tdl.description)
@@ -586,7 +588,7 @@ echo -n "!$ADDR,%s!" > /dev/ttyS1
         """
         Method to copy a file to the live guest.
         """
-        return scp_copy_file(guestaddr, self.sshprivkey, file_to_upload, destination, timeout)
+        return cmd.scp(guestaddr, self.sshprivkey, file_to_upload, destination, timeout, self.log.debug)
 
     def _customize_files(self, guestaddr):
         """

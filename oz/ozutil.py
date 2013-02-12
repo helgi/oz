@@ -21,8 +21,6 @@ Miscellaneous utility functions.
 
 import os
 import random
-import subprocess
-import tempfile
 import errno
 import stat
 import shutil
@@ -47,33 +45,6 @@ def generate_full_auto_path(relative):
         raise Exception("The relative path cannot be None")
 
     return abspath(join(dirname(__file__), "auto", relative))
-
-def executable_exists(program):
-    """
-    Function to find out whether an executable exists in the PATH
-    of the user.  If so, the absolute path to the executable is returned.
-    If not, an exception is raised.
-    """
-    def is_exe(fpath):
-        """
-        Helper method to check if a file exists and is executable
-        """
-        return exists(fpath) and os.access(fpath, os.X_OK)
-
-    if program is None:
-        raise Exception("Invalid program name passed")
-
-    fpath, fname = split(program)
-    if fpath:
-        if is_exe(program):
-            return program
-    else:
-        for path in os.environ["PATH"].split(os.pathsep):
-            exe_file = join(path, program)
-            if is_exe(exe_file):
-                return exe_file
-
-    raise Exception("Could not find %s" % (program))
 
 def write_bytes_to_fd(fd, buf):
     """
@@ -347,110 +318,6 @@ def generate_macaddress():
     mac = [0x52, 0x54, 0x00, random.randint(0x00, 0xff),
            random.randint(0x00, 0xff), random.randint(0x00, 0xff)]
     return ':'.join(["%02x" % x for x in mac])
-
-class SubprocessException(Exception):
-    """
-    Class for subprocess exceptions.  In addition to a error message, it
-    also has a retcode member that has the returncode from the command.
-    """
-    def __init__(self, msg, retcode):
-        Exception.__init__(self, msg)
-        self.retcode = retcode
-
-def subprocess_check_output(*popenargs, **kwargs):
-    """
-    Function to call a subprocess and gather the output.
-    """
-    if 'stdout' in kwargs:
-        raise ValueError('stdout argument not allowed, it will be overridden.')
-    if 'stderr' in kwargs:
-        raise ValueError('stderr argument not allowed, it will be overridden.')
-
-    executable_exists(popenargs[0][0])
-
-    # NOTE: it is very, very important that we use temporary files for
-    # collecting stdout and stderr here.  There is a nasty bug in python
-    # subprocess; if your process produces more than 64k of data on an fd that
-    # is using subprocess.PIPE, the whole thing will hang. To avoid this, we
-    # use temporary fds to capture the data
-    stdouttmp = tempfile.TemporaryFile()
-    stderrtmp = tempfile.TemporaryFile()
-
-    process = subprocess.Popen(stdout=stdouttmp, stderr=stderrtmp, *popenargs,
-                               **kwargs)
-    process.communicate()
-    retcode = process.poll()
-
-    stdouttmp.seek(0, 0)
-    stdout = stdouttmp.read()
-    stdouttmp.close()
-
-    stderrtmp.seek(0, 0)
-    stderr = stderrtmp.read()
-    stderrtmp.close()
-
-    if retcode:
-        cmd = ' '.join(*popenargs)
-        raise SubprocessException("'%s' failed(%d): %s" % (cmd, retcode, stderr), retcode)
-    return (stdout, stderr, retcode)
-
-def ssh_execute_command(guestaddr, sshprivkey, command, timeout=10,
-                        tunnels=None):
-    """
-    Function to execute a command on the guest using SSH and return the
-    output.
-    """
-    # ServerAliveInterval protects against NAT firewall timeouts
-    # on long-running commands with no output
-    #
-    # PasswordAuthentication=no prevents us from falling back to
-    # keyboard-interactive password prompting
-    #
-    # -F /dev/null makes sure that we don't use the global or per-user
-    # configuration files
-
-    cmd = ["ssh", "-i", sshprivkey,
-           "-F", "/dev/null",
-           "-o", "ServerAliveInterval=30",
-           "-o", "StrictHostKeyChecking=no",
-           "-o", "ConnectTimeout=" + str(timeout),
-           "-o", "UserKnownHostsFile=/dev/null",
-           "-o", "PasswordAuthentication=no"]
-
-    if tunnels:
-        for host in tunnels:
-            for port in tunnels[host]:
-                cmd.append("-R %s:%s:%s" % (tunnels[host][port], host, port))
-
-    cmd.extend( ["root@" + guestaddr, command] )
-
-    return subprocess_check_output(cmd)
-
-def scp_copy_file(guestaddr, sshprivkey, file_to_upload, destination,
-                  timeout=10):
-    """
-    Function to upload a file to the guest using scp.
-    """
-    ssh_execute_command(guestaddr, sshprivkey,
-                        "mkdir -p " + os.path.dirname(destination), timeout)
-
-    # ServerAliveInterval protects against NAT firewall timeouts
-    # on long-running commands with no output
-    #
-    # PasswordAuthentication=no prevents us from falling back to
-    # keyboard-interactive password prompting
-    #
-    # -F /dev/null makes sure that we don't use the global or per-user
-    # configuration files
-    return subprocess_check_output(["scp", "-i", sshprivkey,
-                                    "-F", "/dev/null",
-                                    "-o", "ServerAliveInterval=30",
-                                    "-o", "StrictHostKeyChecking=no",
-                                    "-o", "ConnectTimeout=" + str(timeout),
-                                    "-o", "UserKnownHostsFile=/dev/null",
-                                    "-o", "PasswordAuthentication=no",
-                                    file_to_upload,
-                                    "root@" + guestaddr + ":" + destination])
 
 def mkdir_p(path):
     """

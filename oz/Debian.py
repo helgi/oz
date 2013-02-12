@@ -24,7 +24,9 @@ import re
 from os.path import join
 
 import oz.Guest
-from oz.ozutil import generate_full_auto_path, mkdir_p, copy_modify_file, subprocess_check_output
+from oz.ozutil import generate_full_auto_path, mkdir_p, copy_modify_file
+from oz.utils.cmd import cmd
+
 
 class DebianGuest(oz.Guest.CDGuest):
     """
@@ -92,14 +94,14 @@ label customiso
         Method to create a new ISO based on the modified CD/DVD.
         """
         self.log.info("Generating new ISO")
-        subprocess_check_output(["genisoimage", "-r", "-V", "Custom",
-                                 "-J", "-l", "-no-emul-boot",
-                                 "-b", "isolinux/isolinux.bin",
-                                 "-c", "isolinux/boot.cat",
-                                 "-boot-load-size", "4",
-                                 "-cache-inodes", "-boot-info-table",
-                                 "-v", "-v", "-o", self.output_iso,
-                                 self.iso_contents])
+        cmd.run(["genisoimage", "-r", "-V", "Custom",
+                     "-J", "-l", "-no-emul-boot",
+                     "-b", "isolinux/isolinux.bin",
+                     "-c", "isolinux/boot.cat",
+                     "-boot-load-size", "4",
+                     "-cache-inodes", "-boot-info-table",
+                     "-v", "-v", "-o", self.output_iso,
+                     self.iso_contents])
 
 def get_class(tdl, config, auto, output_disk=None, netdev=None, diskbus=None,
               macaddress=None):

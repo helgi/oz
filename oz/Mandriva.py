@@ -24,7 +24,9 @@ import re
 from os.path import join
 
 import oz.Guest
-from oz.ozutil import generate_full_auto_path, copy_modify_file, subprocess_check_output
+from oz.ozutil import generate_full_auto_path, copy_modify_file
+from oz.utils.cmd import cmd
+
 
 class MandrivaGuest(oz.Guest.CDGuest):
     """
@@ -93,14 +95,14 @@ label customiso
         isolinuxbin = join(isolinuxdir, "isolinux/isolinux.bin")
         isolinuxboot = join(isolinuxdir, "isolinux/boot.cat")
 
-        subprocess_check_output(["genisoimage", "-r", "-V", "Custom",
-                                 "-J", "-l", "-no-emul-boot",
-                                 "-b", isolinuxbin,
-                                 "-c", isolinuxboot,
-                                 "-boot-load-size", "4",
-                                 "-cache-inodes", "-boot-info-table",
-                                 "-v", "-v", "-o", self.output_iso,
-                                 self.iso_contents])
+        cmd.run(["genisoimage", "-r", "-V", "Custom",
+                     "-J", "-l", "-no-emul-boot",
+                     "-b", isolinuxbin,
+                     "-c", isolinuxboot,
+                     "-boot-load-size", "4",
+                     "-cache-inodes", "-boot-info-table",
+                     "-v", "-v", "-o", self.output_iso,
+                     self.iso_contents])
 
 def get_class(tdl, config, auto, output_disk=None, netdev=None, diskbus=None,
               macaddress=None):
