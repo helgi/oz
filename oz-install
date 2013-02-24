@@ -24,7 +24,7 @@ import time
 
 import oz.TDL
 import oz.GuestFactory
-import oz.ozutil
+import oz.utils.Configuration
 
 def usage():
     print("Usage: oz-install [OPTIONS] <tdl>")
@@ -126,7 +126,7 @@ if not generate_icicle and icicle_file is not None:
     sys.exit(3)
 
 try:
-    config = oz.ozutil.parse_config(config_file)
+    config = Configuration.parse(config_file)
 
     logging.basicConfig(level=loglevel, format=logformat)
 

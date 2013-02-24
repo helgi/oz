@@ -23,10 +23,6 @@ import re
 import os
 import shutil
 import libvirt
-try:
-    import configparser
-except ImportError:
-    import ConfigParser as configparser
 import gzip
 import guestfs
 import pycurl
@@ -34,6 +30,9 @@ import pycurl
 import oz.Guest
 import oz.ozutil
 import oz.OzException
+
+from orchestra.helpers.simpleconfigparser import SimpleConfigParser
+
 
 class RedHatCDGuest(oz.Guest.CDGuest):
     """
@@ -561,11 +560,11 @@ Subsystem	sftp	/usr/libexec/openssh/sftp-server
             # find out the location of the vmlinuz and initrd
             self.log.debug("Got treeinfo, parsing")
             os.lseek(treeinfofd, 0, os.SEEK_SET)
-            config = configparser.SafeConfigParser()
+            config = SimpleConfigParser()
             config.readfp(fp)
             section = "images-%s" % (self.tdl.arch)
-            kernel = oz.ozutil.config_get_key(config, section, "kernel", None)
-            initrd = oz.ozutil.config_get_key(config, section, "initrd", None)
+            kernel = config.section.kernel
+            initrd = config.section.initrd
         finally:
             fp.close()
 

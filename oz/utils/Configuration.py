@@ -1,15 +1,17 @@
+# Copyright (C) 2012  Helgi Þorbjörnsson <helgi@php.net>
+
 import os
 from os.path import expanduser, join
-try:
-    import configparser
-except ImportError:
-    import ConfigParser as configparser
 
 import oz.ozutil
 import oz.OzException
+from orchestra.helpers.simpleconfigparser import SimpleConfigParser
 
 
 class Configuration:
+    """
+    Manages the Oz configuration and owns the defaults for oz.cfg
+    """
     def parse(self, config_file):
         # if config_file was not None on input, then it was provided by the caller
         # and we use that instead
@@ -21,7 +23,7 @@ class Configuration:
 
         config_file = expanduser(config_file)
 
-        config = configparser.SafeConfigParser()
+        config = SimpleConfigParser(defaults=self.gather_defaults())
         if os.access(config_file, os.F_OK):
             config.read(config_file)
 
@@ -50,7 +52,7 @@ class Configuration:
 
         return retval
 
-    def defaults(self):
+    def gather_defaults(self):
         if os.geteuid() == 0:
             output_dir = "/var/lib/libvirt/images"
             data_dir = "/var/lib/oz"
@@ -62,7 +64,7 @@ class Configuration:
             'paths': {
                 'output_dir': expanduser(output_dir),
                 'data_dir': expanduser(data_dir),
-                'screenshot_dir': join(expanduser(data_dir), "screenshots")
+                'screenshot_dir': join(expanduser(data_dir), 'screenshots')
             },
             'libvirt': {
                 'uri': 'qemu:///system',
@@ -77,3 +79,5 @@ class Configuration:
                 'jeos': False
             },
         }
+
+        return defaults

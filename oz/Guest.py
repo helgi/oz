@@ -48,6 +48,9 @@ import re
 import oz.ozutil
 import oz.OzException
 
+from oz.ozutil import config_get_key
+from oz.ozutil import config_get_boolean_key
+
 def subprocess_check_output(*popenargs, **kwargs):
     """
     Function to call a subprocess and gather the output.  Deprecated; slated
@@ -137,46 +140,26 @@ class Guest(object):
         self.uuid = uuid.uuid4()
         self.macaddr = oz.ozutil.generate_macaddress()
 
-        # configuration from 'paths' section
-        self.output_dir = oz.ozutil.config_get_key(config, 'paths',
-                                                   'output_dir',
-                                                   oz.ozutil.default_output_dir())
-
         oz.ozutil.mkdir_p(self.output_dir)
 
-        self.data_dir = oz.ozutil.config_get_key(config, 'paths',
-                                                 'data_dir',
-                                                 oz.ozutil.default_data_dir())
-
-        self.screenshot_dir = oz.ozutil.config_get_key(config, 'paths',
-                                                       'screenshot_dir',
-                                                       oz.ozutil.default_screenshot_dir())
+        # configuration from 'paths' section
+        self.output_dir = config_get_key(config, 'paths', 'output_dir', oz.ozutil.default_output_dir())
+        self.data_dir = config_get_key(config, 'paths', 'data_dir', oz.ozutil.default_data_dir())
+        self.screenshot_dir = config_get_key(config, 'paths', 'screenshot_dir', oz.ozutil.default_screenshot_dir())
 
         # configuration from 'libvirt' section
-        self.libvirt_uri = oz.ozutil.config_get_key(config, 'libvirt', 'uri',
-                                                    'qemu:///system')
-        self.libvirt_type = oz.ozutil.config_get_key(config, 'libvirt', 'type',
-                                                     None)
-        self.bridge_name = oz.ozutil.config_get_key(config, 'libvirt',
-                                                    'bridge_name', None)
-        self.install_cpus = oz.ozutil.config_get_key(config, 'libvirt', 'cpus',
-                                                     1)
+        self.libvirt_uri = config_get_key(config, 'libvirt', 'uri', 'qemu:///system')
+        self.libvirt_type = config_get_key(config, 'libvirt', 'type', None)
+        self.bridge_name = config_get_key(config, 'libvirt', 'bridge_name', None)
+        self.install_cpus = config_get_key(config, 'libvirt', 'cpus', 1)
         # the memory in the configuration file is specified in megabytes, but
         # libvirt expects kilobytes, so multiply by 1024
-        self.install_memory = oz.ozutil.config_get_key(config, 'libvirt',
-                                                       'memory', 1024) * 1024
+        self.install_memory = config_get_key(config, 'libvirt', 'memory', 1024) * 1024
 
         # configuration from 'cache' section
-        self.cache_original_media = oz.ozutil.config_get_boolean_key(config,
-                                                                     'cache',
-                                                                     'original_media',
-                                                                     True)
-        self.cache_modified_media = oz.ozutil.config_get_boolean_key(config,
-                                                                     'cache',
-                                                                     'modified_media',
-                                                                     False)
-        self.cache_jeos = oz.ozutil.config_get_boolean_key(config, 'cache',
-                                                           'jeos', False)
+        self.cache_original_media = config_get_boolean_key(config, 'cache', 'original_media', True)
+        self.cache_modified_media = config_get_boolean_key(config, 'cache', 'modified_media', False)
+        self.cache_jeos = config_get_boolean_key(config, 'cache', 'jeos', False)
 
         self.jeos_cache_dir = os.path.join(self.data_dir, "jeos")
         self.jeos_filename = os.path.join(self.jeos_cache_dir,
@@ -184,10 +167,8 @@ class Guest(object):
 
         self.diskimage = output_disk
         if self.diskimage is None:
-            self.diskimage = os.path.join(self.output_dir,
-                                          self.tdl.name + ".dsk")
-        self.icicle_tmp = os.path.join(self.data_dir, "icicletmp",
-                                       self.tdl.name)
+            self.diskimage = os.path.join(self.output_dir, self.tdl.name + ".dsk")
+        self.icicle_tmp = os.path.join(self.data_dir, "icicletmp", self.tdl.name)
         self.listen_port = random.randrange(1024, 65535)
 
         self.connect_to_libvirt()

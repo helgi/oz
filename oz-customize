@@ -25,7 +25,7 @@ import stat
 
 import oz.TDL
 import oz.GuestFactory
-import oz.ozutil
+import oz.utils.Configuration
 
 def usage():
     print("Usage: oz-customize [OPTIONS] <tdl> <libvirt_xml_file>")
@@ -82,7 +82,7 @@ if len(args) != 2:
     usage()
 
 try:
-    config = oz.ozutil.parse_config(config_file)
+    config = Configuration.parse(config_file)
 
     tdlfile = args[0]
     libvirt_xml_file = args[1]
