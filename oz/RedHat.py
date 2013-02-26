@@ -560,11 +560,12 @@ Subsystem	sftp	/usr/libexec/openssh/sftp-server
             # find out the location of the vmlinuz and initrd
             self.log.debug("Got treeinfo, parsing")
             os.lseek(treeinfofd, 0, os.SEEK_SET)
+
             config = SimpleConfigParser()
             config.readfp(fp)
             section = "images-%s" % (self.tdl.arch)
-            kernel = config.section.kernel
-            initrd = config.section.initrd
+            kernel = config.get(section, 'kernel')
+            initrd = config.get(section, 'initrd')
         finally:
             fp.close()
 
