@@ -18,7 +18,7 @@
 """
 Main class for guest installation
 """
-
+import abc
 import uuid
 import libvirt
 import os
@@ -57,6 +57,8 @@ def subprocess_check_output(*popenargs, **kwargs):
     return oz.ozutil.subprocess_check_output(*popenargs, **kwargs)
 
 class Guest(object):
+    __metaclass__ = abc.ABCMeta
+
     """
     Main class for guest installation.
     """
@@ -297,6 +299,7 @@ class Guest(object):
     # the next 4 methods are intended to be overridden by the individual
     # OS backends; raise an error if they are called but not implemented
 
+    @abc.abstractmethod
     def generate_install_media(self, force_download=False):
         """
         Base method for generating the install media for operating system
@@ -304,6 +307,7 @@ class Guest(object):
         """
         raise oz.OzException.OzException("Install media for %s%s is not implemented, install cannot continue" % (self.tdl.distro, self.tdl.update))
 
+    @abc.abstractmethod
     def customize(self, libvirt_xml):
         """
         Base method for customizing the operating system.  This is expected
@@ -311,6 +315,7 @@ class Guest(object):
         """
         raise oz.OzException.OzException("Customization for %s%s is not implemented" % (self.tdl.distro, self.tdl.update))
 
+    @abc.abstractmethod
     def generate_icicle(self, libvirt_xml):
         """
         Base method for generating the ICICLE manifest from the operating
@@ -321,6 +326,7 @@ class Guest(object):
 
     # this method is intended to be an optimization if the user wants to do
     # both customize and generate_icicle
+    @abc.abstractmethod
     def customize_and_generate_icicle(self, libvirt_xml):
         """
         Base method for doing operating system customization and ICICLE
