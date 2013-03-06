@@ -23,7 +23,7 @@ import os
 import shutil
 import logging
 
-import oz.utils.Configuration
+from oz.utils.Configuration import Configuration
 
 def usage():
     print("Usage: oz-cleanup-cache [OPTIONS]")
@@ -81,14 +81,11 @@ if len(args) != 0:
 try:
     config = Configuration.parse(config_file)
 
-    data_dir = oz.ozutil.config_get_key(config, 'paths', 'data_dir',
-                                        oz.ozutil.default_data_dir())
-
     dirs = ["floppies", "floppycontent", "icicletmp", "isocontent", "isos",
             "jeos", "kernels", "screenshots"]
     caches = []
     for path in dirs:
-        caches.append(os.path.join(data_dir, path))
+        caches.append(os.path.join(config.paths.data_dir, path))
 
     if not force:
         while True:

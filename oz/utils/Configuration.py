@@ -1,70 +1,40 @@
+# -*- coding: utf-8 -*-
 # Copyright (C) 2012  Helgi Þorbjörnsson <helgi@php.net>
-
 import os
 from os.path import expanduser, join
-
-import oz.ozutil
-import oz.OzException
-from orchestra.helpers.simpleconfigparser import SimpleConfigParser
+from simpleconfigparser import simpleconfigparser
 
 
 class Configuration:
     """
     Manages the Oz configuration and owns the defaults for oz.cfg
     """
-    def parse(self, config_file):
-        # if config_file was not None on input, then it was provided by the caller
-        # and we use that instead
+    def parse(self, config_file=None):
         if config_file is None:
             if os.geteuid() == 0:
                 config_file = "/etc/oz/oz.cfg"
             else:
-                config_file = "~/.oz/oz.cfg"
+                config_file = expanduser("~/.oz/oz.cfg")
 
-        config_file = expanduser(config_file)
-
-        config = SimpleConfigParser(defaults=self.gather_defaults())
+        config = simpleconfigparser(defaults=self.gather_defaults())
         if os.access(config_file, os.F_OK):
             config.read(config_file)
 
         return config
 
-    def config_get_key(self, config, section, key, default):
-        """
-        Function to retrieve config parameters out of the config file.
-        """
-        if config is not None and config.has_section(section) and config.has_option(section, key):
-            return config.get(section, key)
-        else:
-            return default
-
-    def config_get_boolean_key(self, config, section, key, default):
-        """
-        Function to retrieve boolean config parameters out of the config file.
-        """
-        value = self.config_get_key(config, section, key, None)
-        if value is None:
-            return default
-
-        retval = oz.ozutil.string_to_bool(value)
-        if retval is None:
-            raise Exception("Configuration parameter '%s' must be True, Yes, False, or No" % (key))
-
-        return retval
-
     def gather_defaults(self):
         if os.geteuid() == 0:
-            output_dir = "/var/lib/libvirt/images"
             data_dir = "/var/lib/oz"
+            output_dir = "/var/lib/libvirt/images"
         else:
-            output_dir = "~/.oz/images"
-            data_dir = "~/.oz"
+            data_dir = expanduser("~/.oz")
+            output_dir = join(data_dir, "images")
 
         defaults = {
             'paths': {
-                'output_dir': expanduser(output_dir),
-                'data_dir': expanduser(data_dir),
-                'screenshot_dir': join(expanduser(data_dir), 'screenshots')
+                'output_dir': output_dir,
+                'data_dir': data_dir,
+                'screenshot_dir': join(data_dir, 'screenshots')
             },
             'libvirt': {
                 'uri': 'qemu:///system',

@@ -48,8 +48,6 @@ import re
 import oz.ozutil
 import oz.OzException
 
-from oz.ozutil import config_get_key
-from oz.ozutil import config_get_boolean_key
 
 def subprocess_check_output(*popenargs, **kwargs):
     """
@@ -140,30 +138,30 @@ class Guest(object):
         self.uuid = uuid.uuid4()
         self.macaddr = oz.ozutil.generate_macaddress()
 
-        oz.ozutil.mkdir_p(self.output_dir)
-
         # configuration from 'paths' section
-        self.output_dir = config_get_key(config, 'paths', 'output_dir', oz.ozutil.default_output_dir())
-        self.data_dir = config_get_key(config, 'paths', 'data_dir', oz.ozutil.default_data_dir())
-        self.screenshot_dir = config_get_key(config, 'paths', 'screenshot_dir', oz.ozutil.default_screenshot_dir())
+        self.output_dir = config.paths.output_dir
+        self.data_dir = config.paths.data_dir
+        self.screenshot_dir = config.paths.screenshot_dir
 
         # configuration from 'libvirt' section
-        self.libvirt_uri = config_get_key(config, 'libvirt', 'uri', 'qemu:///system')
-        self.libvirt_type = config_get_key(config, 'libvirt', 'type', None)
-        self.bridge_name = config_get_key(config, 'libvirt', 'bridge_name', None)
-        self.install_cpus = config_get_key(config, 'libvirt', 'cpus', 1)
+        self.libvirt_uri = config.libvirt.uri
+        self.libvirt_type = config.libvirt.type
+        self.bridge_name = config.libvirt.bridge_name
+        self.install_cpus = config.libvirt.cpus
         # the memory in the configuration file is specified in megabytes, but
         # libvirt expects kilobytes, so multiply by 1024
-        self.install_memory = config_get_key(config, 'libvirt', 'memory', 1024) * 1024
+        self.install_memory = int(config.libvirt.memory) * 1024
 
         # configuration from 'cache' section
-        self.cache_original_media = config_get_boolean_key(config, 'cache', 'original_media', True)
-        self.cache_modified_media = config_get_boolean_key(config, 'cache', 'modified_media', False)
-        self.cache_jeos = config_get_boolean_key(config, 'cache', 'jeos', False)
+        self.cache_original_media = config.cache.getboolean('original_media')
+        self.cache_modified_media = config.cache.getboolean('modified_media')
+        self.cache_jeos = config.cache.getboolean('jeos')
 
         self.jeos_cache_dir = os.path.join(self.data_dir, "jeos")
         self.jeos_filename = os.path.join(self.jeos_cache_dir,
                                           self.tdl.distro + self.tdl.update + self.tdl.arch + ".dsk")
+
+        oz.ozutil.mkdir_p(self.output_dir)
 
         self.diskimage = output_disk
         if self.diskimage is None:
