@@ -32,6 +32,7 @@ try:
 except ImportError:
     import ConfigParser as configparser
 import collections
+from os.path import split, exists
 
 def generate_full_auto_path(relative):
     """
@@ -81,6 +82,14 @@ def copyfile_sparse(src, dest):
         raise Exception("Source of copy cannot be None")
     if dest is None:
         raise Exception("Destination of copy cannot be None")
+
+    if shutil._samefile(src, dest):
+        raise Exception("`%s` and `%s` are the same file" % (src, dest))
+
+    # Check to make sure destination directory exists. If it doesn't create the directory
+    parent, name = split(dest)
+    if not exists(parent):
+        self.mkdir_p(parent)
 
     src_fd = os.open(src, os.O_RDONLY)
     dest_fd = os.open(dest, os.O_WRONLY|os.O_CREAT|os.O_TRUNC)
