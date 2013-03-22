@@ -24,11 +24,13 @@ import re
 import os
 import libvirt
 import gzip
+from os.path import join, isdir, dirname
 
 import oz.Guest
-import oz.ozutil
-import oz.OzException
 import oz.linuxutil
+from oz.ozutil import generate_full_auto_path, copy_modify_file, subprocess_check_output, mkdir_p
+from oz.ozutil import ssh_execute_command, scp_copy_file, http_download_file, http_get_header, write_cpio
+from oz.OzException import OzException
 
 class UbuntuGuest(oz.Guest.CDGuest):
     """
@@ -42,8 +44,8 @@ class UbuntuGuest(oz.Guest.CDGuest):
 
         self.crond_was_active = False
         self.sshd_was_active = False
-        self.sshd_config = \
-"""SyslogFacility AUTHPRIV
+        self.sshd_config = """\
+SyslogFacility AUTHPRIV
 PasswordAuthentication yes
 ChallengeResponseAuthentication no
 GSSAPIAuthentication yes
@@ -68,14 +70,12 @@ Subsystem       sftp    /usr/libexec/openssh/sftp-server
         if self.debarch == "x86_64":
             self.debarch = "amd64"
 
-        self.kernelfname = os.path.join(self.output_dir,
-                                        self.tdl.name + "-kernel")
-        self.initrdfname = os.path.join(self.output_dir,
-                                        self.tdl.name + "-ramdisk")
-        self.kernelcache = os.path.join(self.data_dir, "kernels",
-                                        self.tdl.distro + self.tdl.update + self.tdl.arch + "-kernel")
-        self.initrdcache = os.path.join(self.data_dir, "kernels",
-                                        self.tdl.distro + self.tdl.update + self.tdl.arch + "-ramdisk")
+        self.kernelfname = join(self.output_dir, self.tdl.name + "-kernel")
+        self.initrdfname = join(self.output_dir, self.tdl.name + "-ramdisk")
+        self.kernelcache = join(self.data_dir, "kernels",
+                                self.tdl.distro + self.tdl.update + self.tdl.arch + "-kernel")
+        self.initrdcache = join(self.data_dir, "kernels",
+                                self.tdl.distro + self.tdl.update + self.tdl.arch + "-ramdisk")
 
         self.cmdline = "priority=critical locale=en_US"
 
@@ -84,12 +84,11 @@ Subsystem       sftp    /usr/libexec/openssh/sftp-server
             self.reboots = 1
 
     def _check_iso_tree(self, customize_or_icicle):
-        # ISOs that contain casper are desktop install CDs
-        if os.path.isdir(os.path.join(self.iso_contents, "casper")):
-            if self.tdl.update in ["6.06", "6.10", "7.04"]:
-                raise oz.OzException.OzException("Ubuntu %s installs can only be done using the alternate or server CDs" % (self.tdl.update))
+        if self.tdl.update in ["6.06", "6.10", "7.04"]:
+            if isdir(join(self.iso_contents, "casper")):
+                raise OzException("Ubuntu %s installs can only be done using the alternate or server CDs" % (self.tdl.update))
             if customize_or_icicle:
-                raise oz.OzException.OzException("Ubuntu customization or ICICLE generation can only be done using the alternate or server CDs")
+                raise OzException("Ubuntu customization or ICICLE generation can only be done using the alternate or server CDs")
 
     def _copy_preseed(self, outname):
         """
@@ -98,6 +97,7 @@ Subsystem       sftp    /usr/libexec/openssh/sftp-server
         self.log.debug("Putting the preseed file in place")
 
         if self.default_auto_file():
+
             def _preseed_sub(line):
                 """
                 Method that is called back from oz.ozutil.copy_modify_file() to
@@ -110,7 +110,7 @@ Subsystem       sftp    /usr/libexec/openssh/sftp-server
                 else:
                     return line
 
-            oz.ozutil.copy_modify_file(self.auto, outname, _preseed_sub)
+            copy_modify_file(self.auto, outname, _preseed_sub)
         else:
             shutil.copy(self.auto, outname)
 
@@ -121,22 +121,21 @@ Subsystem       sftp    /usr/libexec/openssh/sftp-server
         self.log.debug("Modifying ISO")
 
         self.log.debug("Copying preseed file")
-        outname = os.path.join(self.iso_contents, "preseed", "customiso.seed")
-        outdir = os.path.dirname(outname)
-        oz.ozutil.mkdir_p(outdir)
+        outname = join(self.iso_contents, "preseed", "customiso.seed")
+        outdir = dirname(outname)
+        mkdir_p(outdir)
 
         self._copy_preseed(outname)
 
         self.log.debug("Modifying isolinux.cfg")
-        isolinuxcfg = os.path.join(self.iso_contents, "isolinux",
-                                   "isolinux.cfg")
-        isolinuxdir = os.path.dirname(isolinuxcfg)
-        if not os.path.isdir(isolinuxdir):
-            oz.ozutil.mkdir_p(isolinuxdir)
-            shutil.copyfile(os.path.join(self.iso_contents, "isolinux.bin"),
-                            os.path.join(isolinuxdir, "isolinux.bin"))
-            shutil.copyfile(os.path.join(self.iso_contents, "boot.cat"),
-                            os.path.join(isolinuxdir, "boot.cat"))
+        isolinuxcfg = join(self.iso_contents, "isolinux", "isolinux.cfg")
+        isolinuxdir = dirname(isolinuxcfg)
+        if not isdir(isolinuxdir):
+            mkdir_p(isolinuxdir)
+            shutil.copyfile(join(self.iso_contents, "isolinux.bin"),
+                            join(isolinuxdir, "isolinux.bin"))
+            shutil.copyfile(join(self.iso_contents, "boot.cat"),
+                            join(isolinuxdir, "boot.cat"))
         f = open(isolinuxcfg, 'w')
 
         if self.tdl.update in ["5.04", "5.10"]:
@@ -151,7 +150,7 @@ Subsystem       sftp    /usr/libexec/openssh/sftp-server
             f.write("label customiso\n")
             f.write("  menu label ^Customiso\n")
             f.write("  menu default\n")
-            if os.path.isdir(os.path.join(self.iso_contents, "casper")):
+            if isdir(join(self.iso_contents, "casper")):
                 kernelname = "/casper/vmlinuz"
                 # sigh.  Ubuntu 12.04.2, amd64 changed the name of the kernel
                 # on the boot CD to "/casper/vmlinuz.efi".  Handle that here
@@ -180,14 +179,14 @@ Subsystem       sftp    /usr/libexec/openssh/sftp-server
         Method to create a new ISO based on the modified CD/DVD.
         """
         self.log.info("Generating new ISO")
-        oz.ozutil.subprocess_check_output(["genisoimage", "-r", "-V", "Custom",
-                                           "-J", "-l", "-no-emul-boot",
-                                           "-b", "isolinux/isolinux.bin",
-                                           "-c", "isolinux/boot.cat",
-                                           "-boot-load-size", "4",
-                                           "-cache-inodes", "-boot-info-table",
-                                           "-v", "-v", "-o", self.output_iso,
-                                           self.iso_contents])
+        subprocess_check_output(["genisoimage", "-r", "-V", "Custom",
+                                 "-J", "-l", "-no-emul-boot",
+                                 "-b", "isolinux/isolinux.bin",
+                                 "-c", "isolinux/boot.cat",
+                                 "-boot-load-size", "4",
+                                 "-cache-inodes", "-boot-info-table",
+                                 "-v", "-v", "-o", self.output_iso,
+                                 self.iso_contents])
 
     def install(self, timeout=None, force=False):
         """
@@ -294,16 +293,15 @@ Subsystem       sftp    /usr/libexec/openssh/sftp-server
         # part 2; check and setup sshd
         self.log.debug("Step 2: setup sshd")
         if not g_handle.exists('/usr/sbin/sshd'):
-            raise oz.OzException.OzException("ssh not installed on the image, cannot continue")
+            raise OzException("ssh not installed on the image, cannot continue")
 
         self.ssh_startuplink = self._get_service_runlevel_link(g_handle, 'ssh')
         self._guestfs_path_backup(g_handle, self.ssh_startuplink)
         g_handle.ln_sf('/etc/init.d/ssh', self.ssh_startuplink)
 
-        sshd_config_file = os.path.join(self.icicle_tmp, "sshd_config")
-        f = open(sshd_config_file, 'w')
-        f.write(self.sshd_config)
-        f.close()
+        sshd_config_file = join(self.icicle_tmp, "sshd_config")
+        with open(sshd_config_file, 'w') as f:
+            f.write(self.sshd_config)
 
         try:
             self._guestfs_path_backup(g_handle, '/etc/ssh/sshd_config')
@@ -319,35 +317,36 @@ Subsystem       sftp    /usr/libexec/openssh/sftp-server
         # part 3; make sure the guest announces itself
         self.log.debug("Step 3: Guest announcement")
         if not g_handle.exists('/usr/sbin/cron'):
-            raise oz.OzException.OzException("cron not installed on the image, cannot continue")
+            raise OzException("cron not installed on the image, cannot continue")
 
-        scriptfile = os.path.join(self.icicle_tmp, "script")
-        f = open(scriptfile, 'w')
-        f.write("#!/bin/bash\n")
-        f.write("/bin/sleep 20\n")
-        f.write("DEV=$(/usr/bin/awk '{if ($2 == 0) print $1}' /proc/net/route) &&\n")
-        f.write('[ -z "$DEV" ] && exit 0\n')
-        f.write("ADDR=$(/sbin/ip -4 -o addr show dev $DEV | /usr/bin/awk '{print $4}' | /usr/bin/cut -d/ -f1) &&\n")
-        f.write('[ -z "$ADDR" ] && exit 0\n')
-        f.write('echo -n "!$ADDR,%s!" > /dev/ttyS1\n' % (self.uuid))
-        f.close()
+        scriptfile = join(self.icicle_tmp, "script")
+        with open(scriptfile, 'w') as f:
+            f.write("""\
+#!/bin/bash
+/bin/sleep 20
+DEV=$(/usr/bin/awk '{if ($2 == 0) print $1}' /proc/net/route) &&\
+[ -z "$DEV" ] && exit 0
+ADDR=$(/sbin/ip -4 -o addr show dev $DEV | /usr/bin/awk '{print $4}' | /usr/bin/cut -d/ -f1) &&
+[ -z "$ADDR" ] && exit 0
+echo -n "!$ADDR,%s!" > /dev/ttyS1
+""" % (self.uuid))
+
         try:
             g_handle.upload(scriptfile, '/root/reportip')
             g_handle.chmod(0o755, '/root/reportip')
         finally:
             os.unlink(scriptfile)
 
-        announcefile = os.path.join(self.icicle_tmp, "announce")
-        f = open(announcefile, 'w')
-        f.write('*/1 * * * * root /bin/bash -c "/root/reportip"\n')
-        f.close()
+        announcefile = join(self.icicle_tmp, "announce")
+        with open(announcefile, 'w') as f:
+            f.write('*/1 * * * * root /bin/bash -c "/root/reportip"\n')
+
         try:
             g_handle.upload(announcefile, '/etc/cron.d/announce')
         finally:
             os.unlink(announcefile)
 
-        self.cron_startuplink = self._get_service_runlevel_link(g_handle,
-                                                                'cron')
+        self.cron_startuplink = self._get_service_runlevel_link(g_handle, 'cron')
         self._guestfs_path_backup(g_handle, self.cron_startuplink)
         g_handle.ln_sf('/etc/init.d/cron', self.cron_startuplink)
 
@@ -397,11 +396,8 @@ Subsystem       sftp    /usr/libexec/openssh/sftp-server
 
         try:
             self._image_ssh_teardown_step_1(g_handle)
-
             self._image_ssh_teardown_step_2(g_handle)
-
             self._image_ssh_teardown_step_3(g_handle)
-
             self._image_ssh_teardown_step_4(g_handle)
         finally:
             self._guestfs_handle_cleanup(g_handle)
@@ -428,7 +424,7 @@ Subsystem       sftp    /usr/libexec/openssh/sftp-server
                 count -= 1
 
         if not success:
-            raise oz.OzException.OzException("Failed to connect to ssh on running guest")
+            raise OzException("Failed to connect to ssh on running guest")
 
     def _internal_customize(self, libvirt_xml, action):
         """
@@ -497,7 +493,7 @@ Subsystem       sftp    /usr/libexec/openssh/sftp-server
                 elif action == "mod_only":
                     self.do_customize(guestaddr)
                 else:
-                    raise oz.OzException.OzException("Invalid customize action %s; this is a programming error" % (action))
+                    raise OzException("Invalid customize action %s; this is a programming error" % (action))
             finally:
                 if action == "gen_only" and self.safe_icicle_gen:
                     # if this is a gen_only and safe_icicle_gen, there is no
@@ -550,9 +546,7 @@ Subsystem       sftp    /usr/libexec/openssh/sftp-server
             packstr += package.name + ' '
 
         if packstr != '':
-            self.guest_execute_command(guestaddr,
-                                       'apt-get install -y %s' % (packstr),
-                                       tunnels=None)
+            self.guest_execute_command(guestaddr, 'apt-get install -y %s' % (packstr),)
 
         self._customize_files(guestaddr)
 
@@ -560,13 +554,11 @@ Subsystem       sftp    /usr/libexec/openssh/sftp-server
         for cmd in self.tdl.commands:
             self.guest_execute_command(guestaddr, cmd.read())
 
-    def guest_execute_command(self, guestaddr, command, timeout=10,
-                              tunnels=None):
+    def guest_execute_command(self, guestaddr, command, timeout=10, tunnels=None):
         """
         Method to execute a command on the guest and return the output.
         """
-        return oz.ozutil.ssh_execute_command(guestaddr, self.sshprivkey,
-                                             command, timeout, tunnels)
+        return ssh_execute_command(guestaddr, self.sshprivkey, command, timeout, tunnels)
 
     def do_icicle(self, guestaddr):
         """
@@ -590,13 +582,11 @@ Subsystem       sftp    /usr/libexec/openssh/sftp-server
 
         return self._output_icicle_xml(packages, self.tdl.description)
 
-    def guest_live_upload(self, guestaddr, file_to_upload, destination,
-                          timeout=10):
+    def guest_live_upload(self, guestaddr, file_to_upload, destination, timeout=10):
         """
         Method to copy a file to the live guest.
         """
-        return oz.ozutil.scp_copy_file(guestaddr, self.sshprivkey,
-                                       file_to_upload, destination, timeout)
+        return scp_copy_file(guestaddr, self.sshprivkey, file_to_upload, destination, timeout)
 
     def _customize_files(self, guestaddr):
         """
@@ -645,18 +635,18 @@ Subsystem       sftp    /usr/libexec/openssh/sftp-server
 
         # first we check if the txt.cfg exists; this throws an exception if
         # it is missing
-        info = oz.ozutil.http_get_header(txtcfgurl)
+        info = http_get_header(txtcfgurl)
         if info['HTTP-Code'] != 200:
-            raise oz.OzException.OzException("Could not find %s" % (txtcfgurl))
+            raise OzException("Could not find %s" % (txtcfgurl))
 
-        txtcfg = os.path.join(self.icicle_tmp, "txt.cfg")
+        txtcfg = join(self.icicle_tmp, "txt.cfg")
         self.log.debug("Going to write txt.cfg to %s" % (txtcfg))
         txtcfgfd = os.open(txtcfg, os.O_RDWR | os.O_CREAT | os.O_TRUNC)
         os.unlink(txtcfg)
         fp = os.fdopen(txtcfgfd)
         try:
             self.log.debug("Trying to get txt.cfg from " + txtcfgurl)
-            oz.ozutil.http_download_file(txtcfgurl, txtcfgfd, False, self.log)
+            http_download_file(txtcfgurl, txtcfgfd, False, self.log)
 
             # if we made it here, the txt.cfg existed.  Parse it and
             # find out the location of the kernel and ramdisk
@@ -675,7 +665,7 @@ Subsystem       sftp    /usr/libexec/openssh/sftp-server
             fp.close()
 
         if kernel is None or initrd is None:
-            raise oz.OzException.OzException("Empty kernel or initrd")
+            raise OzException("Empty kernel or initrd")
 
         self.log.debug("Returning kernel %s and initrd %s" % (kernel, initrd))
         return (kernel, initrd)
@@ -702,11 +692,11 @@ Subsystem       sftp    /usr/libexec/openssh/sftp-server
         """
         Internal method to create a modified CPIO initrd
         """
-        extrafname = os.path.join(self.icicle_tmp, "extra.cpio")
+        extrafname = join(self.icicle_tmp, "extra.cpio")
         self.log.debug("Writing cpio to %s" % (extrafname))
         cpiofiledict = {}
         cpiofiledict[preseedpath] = 'preseed.cfg'
-        oz.ozutil.write_cpio(cpiofiledict, extrafname)
+        write_cpio(cpiofiledict, extrafname)
 
         try:
             shutil.copyfile(self.initrdcache, self.initrdfname)
@@ -754,7 +744,7 @@ Subsystem       sftp    /usr/libexec/openssh/sftp-server
         shutil.copyfile(self.kernelcache, self.kernelfname)
 
         try:
-            preseedpath = os.path.join(self.icicle_tmp, "preseed.cfg")
+            preseedpath = join(self.icicle_tmp, "preseed.cfg")
             self._copy_preseed(preseedpath)
 
             try:

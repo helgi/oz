@@ -30,11 +30,14 @@ except ImportError:
 import gzip
 import guestfs
 import pycurl
+from os.path import join, exists, isfile
 
 import oz.Guest
 import oz.ozutil
-import oz.OzException
 import oz.linuxutil
+from oz.ozutil import subprocess_check_output, copy_modify_file, mkdir_p, generate_full_auto_path, config_get_key
+from oz.ozutil import ssh_execute_command, scp_copy_file, http_download_file, http_get_header, write_cpio
+from oz.OzException import OzException
 
 class RedHatCDGuest(oz.Guest.CDGuest):
     """
@@ -45,10 +48,11 @@ class RedHatCDGuest(oz.Guest.CDGuest):
         oz.Guest.CDGuest.__init__(self, tdl, config, auto, output_disk,
                                   nicmodel, None, None, diskbus, iso_allowed,
                                   url_allowed, macaddress)
+
         self.crond_was_active = False
         self.sshd_was_active = False
-        self.sshd_config = \
-"""SyslogFacility AUTHPRIV
+        self.sshd_config = """\
+SyslogFacility AUTHPRIV
 PasswordAuthentication yes
 ChallengeResponseAuthentication no
 GSSAPIAuthentication yes
@@ -64,20 +68,16 @@ Subsystem	sftp	/usr/libexec/openssh/sftp-server
 
         # initrdtype is actually a tri-state:
         # None - don't try to do direct kernel/initrd boot
-        # "cpio" - Attempt to do direct kernel/initrd boot with a gzipped CPIO
-        #        archive
-        # "ext2" - Attempt to do direct kernel/initrd boot with a gzipped ext2
-        #         filesystem
+        # "cpio" - Attempt to do direct kernel/initrd boot with a gzipped CPIO archive
+        # "ext2" - Attempt to do direct kernel/initrd boot with a gzipped ext2 filesystem
         self.initrdtype = initrdtype
 
-        self.kernelfname = os.path.join(self.output_dir,
-                                        self.tdl.name + "-kernel")
-        self.initrdfname = os.path.join(self.output_dir,
-                                        self.tdl.name + "-ramdisk")
-        self.kernelcache = os.path.join(self.data_dir, "kernels",
-                                        self.tdl.distro + self.tdl.update + self.tdl.arch + "-kernel")
-        self.initrdcache = os.path.join(self.data_dir, "kernels",
-                                        self.tdl.distro + self.tdl.update + self.tdl.arch + "-ramdisk")
+        self.kernelfname = join(self.output_dir, self.tdl.name + "-kernel")
+        self.initrdfname = join(self.output_dir, self.tdl.name + "-ramdisk")
+        self.kernelcache = join(self.data_dir, "kernels",
+                                self.tdl.distro + self.tdl.update + self.tdl.arch + "-kernel")
+        self.initrdcache = join(self.data_dir, "kernels",
+                                self.tdl.distro + self.tdl.update + self.tdl.arch + "-ramdisk")
 
         self.cmdline = "method=" + self.url + " ks=file:/ks.cfg"
 
@@ -90,36 +90,34 @@ Subsystem	sftp	/usr/libexec/openssh/sftp-server
         Method to create a new ISO based on the modified CD/DVD.
         """
         self.log.debug("Generating new ISO")
-        oz.ozutil.subprocess_check_output(["genisoimage", "-r", "-T", "-J",
-                                           "-V", "Custom", "-no-emul-boot",
-                                           "-b", "isolinux/isolinux.bin",
-                                           "-c", "isolinux/boot.cat",
-                                           "-boot-load-size", "4",
-                                           "-boot-info-table", "-v", "-v",
-                                           "-o", self.output_iso,
-                                           self.iso_contents])
+        subprocess_check_output(["genisoimage", "-r", "-T", "-J",
+                                 "-V", "Custom", "-no-emul-boot",
+                                 "-b", "isolinux/isolinux.bin",
+                                 "-c", "isolinux/boot.cat",
+                                 "-boot-load-size", "4",
+                                 "-boot-info-table", "-v", "-v",
+                                 "-o", self.output_iso,
+                                 self.iso_contents])
 
     def _check_iso_tree(self, customize_or_icicle):
-        kernel = os.path.join(self.iso_contents, "isolinux", "vmlinuz")
-        if not os.path.exists(kernel):
-            raise oz.OzException.OzException("Fedora/Red Hat installs can only be done using a boot.iso (netinst) or DVD image (LiveCDs are not supported)")
+        kernel = join(self.iso_contents, "isolinux", "vmlinuz")
+        if not exists(kernel):
+            raise OzException("Fedora/Red Hat installs can only be done using a boot.iso (netinst) or DVD image (LiveCDs are not supported)")
 
     def _modify_isolinux(self, initrdline):
         """
         Method to modify the isolinux.cfg file on a RedHat style CD.
         """
         self.log.debug("Modifying isolinux.cfg")
-        isolinuxcfg = os.path.join(self.iso_contents, "isolinux",
-                                   "isolinux.cfg")
+        isolinuxcfg = join(self.iso_contents, "isolinux", "isolinux.cfg")
 
-        f = open(isolinuxcfg, "w")
-        f.write("default customiso\n")
-        f.write("timeout 1\n")
-        f.write("prompt 0\n")
-        f.write("label customiso\n")
-        f.write("  kernel vmlinuz\n")
-        f.write(initrdline)
-        f.close()
+        with open(isolinuxcfg, "w") as f:
+            f.write("default customiso\n")
+            f.write("timeout 1\n")
+            f.write("prompt 0\n")
+            f.write("label customiso\n")
+            f.write("  kernel vmlinuz\n")
+            f.write(initrdline)
 
     def _copy_kickstart(self, outname):
         """
@@ -138,7 +136,7 @@ Subsystem	sftp	/usr/libexec/openssh/sftp-server
                 else:
                     return line
 
-            oz.ozutil.copy_modify_file(self.auto, outname, _kssub)
+            copy_modify_file(self.auto, outname, _kssub)
         else:
             shutil.copy(self.auto, outname)
 
@@ -249,15 +247,10 @@ Subsystem	sftp	/usr/libexec/openssh/sftp-server
 
         try:
             self._image_ssh_teardown_step_1(g_handle)
-
             self._image_ssh_teardown_step_2(g_handle)
-
             self._image_ssh_teardown_step_3(g_handle)
-
             self._image_ssh_teardown_step_4(g_handle)
-
             self._image_ssh_teardown_step_5(g_handle)
-
             self._image_ssh_teardown_step_6(g_handle)
         finally:
             self._guestfs_handle_cleanup(g_handle)
@@ -285,7 +278,7 @@ Subsystem	sftp	/usr/libexec/openssh/sftp-server
         # part 2; check and setup sshd
         self.log.debug("Step 2: setup sshd")
         if not g_handle.exists('/usr/sbin/sshd'):
-            raise oz.OzException.OzException("ssh not installed on the image, cannot continue")
+            raise OzException("ssh not installed on the image, cannot continue")
 
         if g_handle.exists('/lib/systemd/system/sshd.service'):
             if g_handle.exists('/etc/systemd/system/multi-user.target.wants/sshd.service'):
@@ -298,10 +291,9 @@ Subsystem	sftp	/usr/libexec/openssh/sftp-server
             self._guestfs_path_backup(g_handle, startuplink)
             g_handle.ln_sf('/etc/init.d/sshd', startuplink)
 
-        sshd_config_file = os.path.join(self.icicle_tmp, "sshd_config")
-        f = open(sshd_config_file, 'w')
-        f.write(self.sshd_config)
-        f.close()
+        sshd_config_file = join(self.icicle_tmp, "sshd_config")
+        with open(sshd_config_file, 'w') as f:
+            f.write(self.sshd_config)
 
         try:
             self._guestfs_path_backup(g_handle, '/etc/ssh/sshd_config')
@@ -325,27 +317,29 @@ Subsystem	sftp	/usr/libexec/openssh/sftp-server
         # part 4; make sure the guest announces itself
         self.log.debug("Step 4: Guest announcement")
         if not g_handle.exists('/usr/sbin/crond'):
-            raise oz.OzException.OzException("cron not installed on the image, cannot continue")
+            raise OzException("cron not installed on the image, cannot continue")
 
-        scriptfile = os.path.join(self.icicle_tmp, "script")
-        f = open(scriptfile, 'w')
-        f.write("#!/bin/bash\n")
-        f.write("DEV=$(/bin/awk '{if ($2 == 0) print $1}' /proc/net/route) &&\n")
-        f.write('[ -z "$DEV" ] && exit 0\n')
-        f.write("ADDR=$(/sbin/ip -4 -o addr show dev $DEV | /bin/awk '{print $4}' | /bin/cut -d/ -f1) &&\n")
-        f.write('[ -z "$ADDR" ] && exit 0\n')
-        f.write('echo -n "!$ADDR,%s!" > /dev/ttyS1\n' % (self.uuid))
-        f.close()
+        scriptfile = join(self.icicle_tmp, "script")
+        with open(scriptfile, 'w') as f:
+            f.write("""\
+#!/bin/bash
+DEV=$(/bin/awk '{if ($2 == 0) print $1}' /proc/net/route) &&
+[ -z "$DEV" ] && exit 0
+ADDR=$(/sbin/ip -4 -o addr show dev $DEV | /bin/awk '{print $4}' | /bin/cut -d/ -f1) &&
+[ -z "$ADDR" ] && exit 0
+echo -n "!$ADDR,%s!" > /dev/ttyS1
+"""% (self.uuid))
+
         try:
             g_handle.upload(scriptfile, '/root/reportip')
             g_handle.chmod(0o755, '/root/reportip')
         finally:
             os.unlink(scriptfile)
 
-        announcefile = os.path.join(self.icicle_tmp, "announce")
-        f = open(announcefile, 'w')
-        f.write('*/1 * * * * root /bin/bash -c "/root/reportip"\n')
-        f.close()
+        announcefile = join(self.icicle_tmp, "announce")
+        with open(announcefile, 'w') as f:
+            f.write('*/1 * * * * root /bin/bash -c "/root/reportip"\n')
+
         try:
             g_handle.upload(announcefile, '/etc/cron.d/announce')
         finally:
@@ -372,10 +366,10 @@ Subsystem	sftp	/usr/libexec/openssh/sftp-server
         self._guestfs_path_backup(g_handle, '/etc/selinux/config')
 
         selinuxfile = self.icicle_tmp + "/selinux"
-        f = open(selinuxfile, 'w')
-        f.write("SELINUX=permissive\n")
-        f.write("SELINUXTYPE=targeted\n")
-        f.close()
+        with open(selinuxfile, 'w') as f:
+            f.write("SELINUX=permissive\n")
+            f.write("SELINUXTYPE=targeted\n")
+
         try:
             g_handle.upload(selinuxfile, "/etc/selinux/config")
         finally:
@@ -430,13 +424,11 @@ Subsystem	sftp	/usr/libexec/openssh/sftp-server
         finally:
             self._guestfs_handle_cleanup(g_handle)
 
-    def guest_execute_command(self, guestaddr, command, timeout=10,
-                              tunnels=None):
+    def guest_execute_command(self, guestaddr, command, timeout=10, tunnels=None):
         """
         Method to execute a command on the guest and return the output.
         """
-        return oz.ozutil.ssh_execute_command(guestaddr, self.sshprivkey,
-                                             command, timeout, tunnels)
+        return ssh_execute_command(guestaddr, self.sshprivkey, command, timeout, tunnels)
 
     def do_icicle(self, guestaddr):
         """
@@ -448,6 +440,7 @@ Subsystem	sftp	/usr/libexec/openssh/sftp-server
                                                              'rpm -qa',
                                                              timeout=30)
 
+<<<<<<< HEAD
         package_split = stdout.split("\n")
 
         extrasplit = []
@@ -462,14 +455,15 @@ Subsystem	sftp	/usr/libexec/openssh/sftp-server
 
         return self._output_icicle_xml(package_split, self.tdl.description,
                                        extrasplit)
+=======
+        return self._output_icicle_xml(stdout.split("\n"), self.tdl.description)
+>>>>>>> Clean up imports and various other smaller items
 
-    def guest_live_upload(self, guestaddr, file_to_upload, destination,
-                          timeout=10):
+    def guest_live_upload(self, guestaddr, file_to_upload, destination, timeout=10):
         """
         Method to copy a file to the live guest.
         """
-        return oz.ozutil.scp_copy_file(guestaddr, self.sshprivkey,
-                                       file_to_upload, destination, timeout)
+        return scp_copy_file(guestaddr, self.sshprivkey, file_to_upload, destination, timeout)
 
     def _customize_files(self, guestaddr):
         """
@@ -532,18 +526,18 @@ Subsystem	sftp	/usr/libexec/openssh/sftp-server
 
         # first we check if the .treeinfo exists; this throws an exception if
         # it is missing
-        info = oz.ozutil.http_get_header(treeinfourl)
+        info = http_get_header(treeinfourl)
         if info['HTTP-Code'] != 200:
-            raise oz.OzException.OzException("Could not find %s" % (treeinfourl))
+            raise OzException("Could not find %s" % (treeinfourl))
 
-        treeinfo = os.path.join(self.icicle_tmp, "treeinfo")
+        treeinfo = join(self.icicle_tmp, "treeinfo")
         self.log.debug("Going to write treeinfo to %s" % (treeinfo))
         treeinfofd = os.open(treeinfo, os.O_RDWR | os.O_CREAT | os.O_TRUNC)
         try:
             os.unlink(treeinfo)
             fp = os.fdopen(treeinfofd)
             self.log.debug("Trying to get treeinfo from " + treeinfourl)
-            oz.ozutil.http_download_file(treeinfourl, treeinfofd,
+            http_download_file(treeinfourl, treeinfofd,
                                          False, self.log)
 
             # if we made it here, the .treeinfo existed.  Parse it and
@@ -553,13 +547,13 @@ Subsystem	sftp	/usr/libexec/openssh/sftp-server
             config = configparser.SafeConfigParser()
             config.readfp(fp)
             section = "images-%s" % (self.tdl.arch)
-            kernel = oz.ozutil.config_get_key(config, section, "kernel", None)
-            initrd = oz.ozutil.config_get_key(config, section, "initrd", None)
+            kernel = config_get_key(config, section, "kernel", None)
+            initrd = config_get_key(config, section, "initrd", None)
         finally:
             os.close(treeinfofd)
 
         if kernel is None or initrd is None:
-            raise oz.OzException.OzException("Empty kernel or initrd")
+            raise OzException("Empty kernel or initrd")
 
         self.log.debug("Returning kernel %s and initrd %s" % (kernel, initrd))
         return (kernel, initrd)
@@ -570,11 +564,11 @@ Subsystem	sftp	/usr/libexec/openssh/sftp-server
         """
         # if initrdtype is cpio, then we can just append a gzipped
         # archive onto the end of the initrd
-        extrafname = os.path.join(self.icicle_tmp, "extra.cpio")
+        extrafname = join(self.icicle_tmp, "extra.cpio")
         self.log.debug("Writing cpio to %s" % (extrafname))
         cpiofiledict = {}
         cpiofiledict[kspath] = 'ks.cfg'
-        oz.ozutil.write_cpio(cpiofiledict, extrafname)
+        write_cpio(cpiofiledict, extrafname)
 
         try:
             shutil.copyfile(self.initrdcache, self.initrdfname)
@@ -589,10 +583,10 @@ Subsystem	sftp	/usr/libexec/openssh/sftp-server
         # in this case, the archive is not CPIO but is an ext2
         # filesystem.  use guestfs to mount it and add the kickstart
         self.log.debug("Creating temporary directory")
-        tmpdir = os.path.join(self.icicle_tmp, "initrd")
-        oz.ozutil.mkdir_p(tmpdir)
+        tmpdir = join(self.icicle_tmp, "initrd")
+        mkdir_p(tmpdir)
 
-        ext2file = os.path.join(tmpdir, "initrd.ext2")
+        ext2file = join(tmpdir, "initrd.ext2")
         self.log.debug("Uncompressing initrd %s to %s" % (self.initrdfname, ext2file))
         inf = gzip.open(self.initrdcache, 'rb')
         outf = open(ext2file, "w")
@@ -658,7 +652,7 @@ Subsystem	sftp	/usr/libexec/openssh/sftp-server
         shutil.copyfile(self.kernelcache, self.kernelfname)
 
         try:
-            kspath = os.path.join(self.icicle_tmp, "ks.cfg")
+            kspath = join(self.icicle_tmp, "ks.cfg")
             self._copy_kickstart(kspath)
 
             try:
@@ -667,7 +661,7 @@ Subsystem	sftp	/usr/libexec/openssh/sftp-server
                 elif self.initrdtype == "ext2":
                     self._create_ext2_initrd(kspath)
                 else:
-                    raise oz.OzException.OzException("Invalid initrdtype, this is a programming error")
+                    raise OzException("Invalid initrdtype, this is a programming error")
             finally:
                 os.unlink(kspath)
         except:
@@ -775,7 +769,7 @@ class RedHatCDYumGuest(RedHatCDGuest):
             # supports byte ranges, fail.
             count = 5
             while count > 0:
-                info = oz.ozutil.http_get_header(url, redirect=False)
+                info = http_get_header(url, redirect=False)
 
                 if 'Accept-Ranges' in info and info['Accept-Ranges'] == "none":
                     if url == info['Redirect-URL']:
@@ -793,7 +787,7 @@ class RedHatCDYumGuest(RedHatCDGuest):
                 break
 
             if count == 0:
-                raise oz.OzException.OzException("%s URL installs cannot be done using servers that don't accept byte ranges.  Please try another mirror" % (self.tdl.distro))
+                raise OzException("%s URL installs cannot be done using servers that don't accept byte ranges.  Please try another mirror" % (self.tdl.distro))
 
         return url
 
@@ -822,7 +816,7 @@ class RedHatCDYumGuest(RedHatCDGuest):
                 port = self._protocol_to_default_port[protocol]
             return (protocol, hostname, port, path)
         else:
-            raise oz.OzException.OzException("Could not decode URL (%s) for port forwarding" % (repourl))
+            raise OzException("Could not decode URL (%s) for port forwarding" % (repourl))
 
     def _discover_repo_locality(self, repo_url, guestaddr, certdict):
         """
@@ -877,8 +871,7 @@ class RedHatCDYumGuest(RedHatCDGuest):
 
         # now check if we can access it remotely
         try:
-            self.guest_execute_command(guestaddr,
-                                       "curl --silent %s %s" % (curlargs, full_url))
+            self.guest_execute_command(guestaddr, "curl --silent %s %s" % (curlargs, full_url))
             # if we reach here, then the perform succeeded, which means we
             # could reach the repo from the guest
             guest = True
@@ -962,13 +955,13 @@ class RedHatCDYumGuest(RedHatCDGuest):
                 """
                 certdict[propname] = {}
                 filename = "%s-%s" % (repo.name.replace(" ", "_"), fileext)
-                localname = os.path.join(self.icicle_tmp, filename)
+                localname = join(self.icicle_tmp, filename)
                 certdict[propname]["localname"] = localname
-                f = open(localname, 'w')
-                f.write(cert)
-                f.close()
+                with open(localname, 'w') as f:
+                    f.write(cert)
+
                 try:
-                    remotename = os.path.join(self._remotecertdir, filename)
+                    remotename = join(self._remotecertdir, filename)
                     if not self._remotecertdir_created:
                         self.guest_execute_command(guestaddr,
                                                    "mkdir -p %s" % (self._remotecertdir))
@@ -1004,16 +997,16 @@ class RedHatCDYumGuest(RedHatCDGuest):
             finally:
                 # Clean up any local copies of the cert files
                 for cert in certdict:
-                    if os.path.isfile(certdict[cert]["localname"]):
+                    if isfile(certdict[cert]["localname"]):
                         os.unlink(certdict[cert]["localname"])
                 # FIXME: Clean these up on the remote end of things if we fail
                 # anywhere below
 
             if not host and not guest:
-                raise oz.OzException.OzException("Could not reach repository %s from the host or the guest, aborting" % (repo.url))
+                raise OzException("Could not reach repository %s from the host or the guest, aborting" % (repo.url))
 
             filename = repo.name.replace(" ", "_") + ".repo"
-            localname = os.path.join(self.icicle_tmp, filename)
+            localname = join(self.icicle_tmp, filename)
             f = open(localname, 'w')
             f.write("[%s]\n" % repo.name.replace(" ", "_"))
             f.write("name=%s\n" % repo.name)
@@ -1059,7 +1052,7 @@ class RedHatCDYumGuest(RedHatCDGuest):
             f.close()
 
             try:
-                remotename = os.path.join("/etc/yum.repos.d/", filename)
+                remotename = join("/etc/yum.repos.d/", filename)
                 self.guest_live_upload(guestaddr, localname, remotename)
                 repo.remotefiles.append(remotename)
             finally:
@@ -1120,7 +1113,7 @@ class RedHatCDYumGuest(RedHatCDGuest):
                 count -= 1
 
         if not success:
-            raise oz.OzException.OzException("Failed to connect to ssh on running guest")
+            raise OzException("Failed to connect to ssh on running guest")
 
     def _internal_customize(self, libvirt_xml, action):
         """
@@ -1189,7 +1182,7 @@ class RedHatCDYumGuest(RedHatCDGuest):
                 elif action == "mod_only":
                     self.do_customize(guestaddr)
                 else:
-                    raise oz.OzException.OzException("Invalid customize action %s; this is a programming error" % (action))
+                    raise OzException("Invalid customize action %s; this is a programming error" % (action))
             finally:
                 if action == "gen_only" and self.safe_icicle_gen:
                     # if this is a gen_only and safe_icicle_gen, there is no
@@ -1240,17 +1233,17 @@ class RedHatFDGuest(oz.Guest.FDGuest):
                                   nicmodel, None, None, diskbus, macaddress)
 
         if self.tdl.arch != "i386":
-            raise oz.OzException.OzException("Invalid arch " + self.tdl.arch + "for " + self.tdl.distro + " guest")
+            raise OzException("Invalid arch " + self.tdl.arch + "for " + self.tdl.distro + " guest")
 
     def _modify_floppy(self):
         """
         Method to make the floppy auto-boot with appropriate parameters.
         """
-        oz.ozutil.mkdir_p(self.floppy_contents)
+        mkdir_p(self.floppy_contents)
 
         self.log.debug("Putting the kickstart in place")
 
-        output_ks = os.path.join(self.floppy_contents, "ks.cfg")
+        output_ks = join(self.floppy_contents, "ks.cfg")
 
         if self.default_auto_file():
             def _kssub(line):
@@ -1265,16 +1258,15 @@ class RedHatFDGuest(oz.Guest.FDGuest):
                 else:
                     return line
 
-            oz.ozutil.copy_modify_file(self.auto, output_ks, _kssub)
+            copy_modify_file(self.auto, output_ks, _kssub)
         else:
             shutil.copy(self.auto, output_ks)
 
-        oz.ozutil.subprocess_check_output(["mcopy", "-i", self.output_floppy,
-                                           output_ks, "::KS.CFG"])
+        subprocess_check_output(["mcopy", "-i", self.output_floppy, output_ks, "::KS.CFG"])
 
         self.log.debug("Modifying the syslinux.cfg")
 
-        syslinux = os.path.join(self.floppy_contents, "SYSLINUX.CFG")
+        syslinux = join(self.floppy_contents, "SYSLINUX.CFG")
         outfile = open(syslinux, "w")
         outfile.write("default customboot\n")
         outfile.write("prompt 1\n")
@@ -1286,13 +1278,13 @@ class RedHatFDGuest(oz.Guest.FDGuest):
 
         # sometimes, syslinux.cfg on the floppy gets marked read-only.  Avoid
         # problems with the subsequent mcopy by marking it read/write.
-        oz.ozutil.subprocess_check_output(["mattrib", "-r", "-i",
-                                           self.output_floppy,
-                                           "::SYSLINUX.CFG"])
+        subprocess_check_output(["mattrib", "-r", "-i",
+                                 self.output_floppy,
+                                 "::SYSLINUX.CFG"])
 
-        oz.ozutil.subprocess_check_output(["mcopy", "-n", "-o", "-i",
-                                           self.output_floppy, syslinux,
-                                           "::SYSLINUX.CFG"])
+        subprocess_check_output(["mcopy", "-n", "-o", "-i",
+                                 self.output_floppy, syslinux,
+                                 "::SYSLINUX.CFG"])
 
     def generate_install_media(self, force_download=False,
                                customize_or_icicle=False):
