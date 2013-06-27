@@ -470,6 +470,13 @@ class Guest(object):
         self.lxml_subelement(bootDisk, "target", None, {'dev':self.disk_dev, 'bus':self.disk_bus})
         self.lxml_subelement(bootDisk, "source", None, {'file':self.diskimage})
         self.lxml_subelement(bootDisk, "driver", None, {'name':'qemu', 'type':self.image_type})
+
+        # Fix a udev / grub problem
+        # See https://bugs.launchpad.net/ubuntu/+source/grub2/+bug/604335
+        #     https://bugs.launchpad.net/ubuntu/+source/grub2/+bug/565146
+        #     http://lists.opensuse.org/opensuse-bugs/2012-04/msg00301.html
+        self.lxml_subelement(bootDisk, "serial", 'OMG001')
+
         # install disk (if any)
         if not installdev:
             installdev_list = []
