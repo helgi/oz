@@ -139,7 +139,7 @@ class OpenSUSEGuest(oz.Guest.CDGuest):
         Method to execute a command on the guest and return the output.
         """
         return oz.ozutil.ssh_execute_command(guestaddr, self.sshprivkey,
-                                             command, timeout)
+                                             command, timeout, self.log.debug)
 
     def _image_ssh_teardown_step_1(self, g_handle):
         """
@@ -221,11 +221,9 @@ class OpenSUSEGuest(oz.Guest.CDGuest):
         XML.
         """
         self.log.debug("Generating ICICLE")
-        stdout, stderr, retcode = self.guest_execute_command(guestaddr,
-                                                             'rpm -qa',
-                                                             timeout=30)
+        response = self.guest_execute_command(guestaddr, 'rpm -qa', timeout=30)
 
-        return self._output_icicle_xml(stdout.split("\n"),
+        return self._output_icicle_xml(response.output.split("\n"),
                                        self.tdl.description)
 
     def _image_ssh_setup_step_1(self, g_handle):
@@ -407,21 +405,18 @@ AcceptEnv LC_IDENTIFICATION LC_ALL
         if packstr != '':
             # due to a bug in OpenSUSE 11.1, we want to remove the default
             # CD repo first
-            stdout, stderr, retcode = self.guest_execute_command(guestaddr,
-                                                                 'zypper repos -d')
+            response = self.guest_execute_command(guestaddr, 'zypper repos -d')
             removerepos = []
-            for line in stdout.split('\n'):
+            for line in response.output.split('\n'):
                 if re.match("^[0-9]+", line):
                     split = line.split('|')
 
                     if re.match("^cd://", split[7].strip()):
                         removerepos.append(split[0].strip())
             for repo in removerepos:
-                self.guest_execute_command(guestaddr,
-                                           'zypper removerepo %s' % (repo))
+                self.guest_execute_command(guestaddr, 'zypper removerepo %s' % (repo))
 
-            self.guest_execute_command(guestaddr,
-                                       'zypper -n install %s' % (packstr))
+            self.guest_execute_command(guestaddr, 'zypper -n install %s' % (packstr))
 
         self._customize_files(guestaddr)
 
@@ -445,7 +440,7 @@ AcceptEnv LC_IDENTIFICATION LC_ALL
         success = False
         while count > 0:
             try:
-                stdout, stderr, retcode = self.guest_execute_command(guestaddr, 'ls', timeout=1)
+                self.guest_execute_command(guestaddr, 'ls', timeout=1)
                 self.log.debug("Succeeded")
                 success = True
                 break

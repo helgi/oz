@@ -420,7 +420,7 @@ Subsystem       sftp    /usr/libexec/openssh/sftp-server
         success = False
         while count > 0:
             try:
-                stdout, stderr, retcode = self.guest_execute_command(guestaddr, 'ls', timeout=1)
+                self.guest_execute_command(guestaddr, 'ls', timeout=1)
                 self.log.debug("Succeeded")
                 success = True
                 break
@@ -569,7 +569,7 @@ Subsystem       sftp    /usr/libexec/openssh/sftp-server
         Method to execute a command on the guest and return the output.
         """
         return oz.ozutil.ssh_execute_command(guestaddr, self.sshprivkey,
-                                             command, timeout, tunnels)
+                                             command, timeout, tunnels, self.log.debug)
 
     def do_icicle(self, guestaddr):
         """
@@ -577,9 +577,7 @@ Subsystem       sftp    /usr/libexec/openssh/sftp-server
         XML.
         """
         self.log.debug("Generating ICICLE")
-        stdout, stderr, retcode = self.guest_execute_command(guestaddr,
-                                                             'dpkg --get-selections',
-                                                             timeout=30)
+        response = self.guest_execute_command(guestaddr, 'dpkg --get-selections', timeout=30)
 
         # the data we get back from dpkg is in the form of:
         #
@@ -588,7 +586,7 @@ Subsystem       sftp    /usr/libexec/openssh/sftp-server
         # so we have to strip out the tabs and the install before
         # passing it on to output_icicle_xml
         packages = []
-        for line in stdout.split("\n"):
+        for line in response.output.split("\n"):
             packages.append(line.split("\t")[0])
 
         return self._output_icicle_xml(packages, self.tdl.description)

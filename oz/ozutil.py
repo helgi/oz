@@ -35,6 +35,7 @@ except ImportError:
 import collections
 import ftplib
 import struct
+import command
 
 def generate_full_auto_path(relative):
     """
@@ -348,54 +349,8 @@ def generate_macaddress():
            random.randint(0x00, 0xff), random.randint(0x00, 0xff)]
     return ':'.join(["%02x" % x for x in mac])
 
-class SubprocessException(Exception):
-    """
-    Class for subprocess exceptions.  In addition to a error message, it
-    also has a retcode member that has the returncode from the command.
-    """
-    def __init__(self, msg, retcode):
-        Exception.__init__(self, msg)
-        self.retcode = retcode
-
-def subprocess_check_output(*popenargs, **kwargs):
-    """
-    Function to call a subprocess and gather the output.
-    """
-    if 'stdout' in kwargs:
-        raise ValueError('stdout argument not allowed, it will be overridden.')
-    if 'stderr' in kwargs:
-        raise ValueError('stderr argument not allowed, it will be overridden.')
-
-    executable_exists(popenargs[0][0])
-
-    # NOTE: it is very, very important that we use temporary files for
-    # collecting stdout and stderr here.  There is a nasty bug in python
-    # subprocess; if your process produces more than 64k of data on an fd that
-    # is using subprocess.PIPE, the whole thing will hang. To avoid this, we
-    # use temporary fds to capture the data
-    stdouttmp = tempfile.TemporaryFile()
-    stderrtmp = tempfile.TemporaryFile()
-
-    process = subprocess.Popen(stdout=stdouttmp, stderr=stderrtmp, *popenargs,
-                               **kwargs)
-    process.communicate()
-    retcode = process.poll()
-
-    stdouttmp.seek(0, 0)
-    stdout = stdouttmp.read()
-    stdouttmp.close()
-
-    stderrtmp.seek(0, 0)
-    stderr = stderrtmp.read()
-    stderrtmp.close()
-
-    if retcode:
-        cmd = ' '.join(*popenargs)
-        raise SubprocessException("'%s' failed(%d): %s" % (cmd, retcode, stderr), retcode)
-    return (stdout, stderr, retcode)
-
-def ssh_execute_command(guestaddr, sshprivkey, command, timeout=10,
-                        tunnels=None):
+def ssh_execute_command(guestaddr, sshprivkey, c, timeout=10,
+                        tunnels=None, debug=None):
     """
     Function to execute a command on the guest using SSH and return the
     output.
@@ -422,12 +377,12 @@ def ssh_execute_command(guestaddr, sshprivkey, command, timeout=10,
             for port in tunnels[host]:
                 cmd.append("-R %s:%s:%s" % (tunnels[host][port], host, port))
 
-    cmd.extend( ["root@" + guestaddr, command] )
+    cmd.extend( ["root@" + guestaddr, c] )
 
-    return subprocess_check_output(cmd)
+    return command.run(cmd, debug=debug)
 
 def scp_copy_file(guestaddr, sshprivkey, file_to_upload, destination,
-                  timeout=10):
+                  timeout=10, debug=None):
     """
     Function to upload a file to the guest using scp.
     """
@@ -442,15 +397,15 @@ def scp_copy_file(guestaddr, sshprivkey, file_to_upload, destination,
     #
     # -F /dev/null makes sure that we don't use the global or per-user
     # configuration files
-    return subprocess_check_output(["scp", "-i", sshprivkey,
-                                    "-F", "/dev/null",
-                                    "-o", "ServerAliveInterval=30",
-                                    "-o", "StrictHostKeyChecking=no",
-                                    "-o", "ConnectTimeout=" + str(timeout),
-                                    "-o", "UserKnownHostsFile=/dev/null",
-                                    "-o", "PasswordAuthentication=no",
-                                    file_to_upload,
-                                    "root@" + guestaddr + ":" + destination])
+    return command.run(["scp", "-i", sshprivkey,
+                        "-F", "/dev/null",
+                        "-o", "ServerAliveInterval=30",
+                        "-o", "StrictHostKeyChecking=no",
+                        "-o", "ConnectTimeout=" + str(timeout),
+                        "-o", "UserKnownHostsFile=/dev/null",
+                        "-o", "PasswordAuthentication=no",
+                        file_to_upload,
+                        "root@" + guestaddr + ":" + destination], debug=debug)
 
 def mkdir_p(path):
     """

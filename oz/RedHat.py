@@ -436,7 +436,7 @@ Subsystem	sftp	/usr/libexec/openssh/sftp-server
         Method to execute a command on the guest and return the output.
         """
         return oz.ozutil.ssh_execute_command(guestaddr, self.sshprivkey,
-                                             command, timeout, tunnels)
+                                             command, timeout, tunnels, self.log.debug)
 
     def do_icicle(self, guestaddr):
         """
@@ -444,24 +444,21 @@ Subsystem	sftp	/usr/libexec/openssh/sftp-server
         XML.
         """
         self.log.debug("Generating ICICLE")
-        stdout, stderr, retcode = self.guest_execute_command(guestaddr,
-                                                             'rpm -qa',
-                                                             timeout=30)
+        response = self.guest_execute_command(guestaddr, 'rpm -qa', timeout=30)
 
-        package_split = stdout.split("\n")
+        package_split = response.output.split("\n")
 
         extrasplit = []
         if self.tdl.icicle_extra_cmd:
-            extrastdout, stderr, retcode = self.guest_execute_command(guestaddr,
+            response = self.guest_execute_command(guestaddr,
                                                                       self.tdl.icicle_extra_cmd,
                                                                       timeout=30)
-            extrasplit = extrastdout.split("\n")
+            extrasplit = response.output.split("\n")
 
             if len(package_split) != len(extrasplit):
                 raise oz.OzException.OzException("Invalid extra package command; it must return the same set of packages as 'rpm -qa'")
 
-        return self._output_icicle_xml(package_split, self.tdl.description,
-                                       extrasplit)
+        return self._output_icicle_xml(package_split, self.tdl.description, extrasplit)
 
     def guest_live_upload(self, guestaddr, file_to_upload, destination,
                           timeout=10):
@@ -1112,7 +1109,7 @@ class RedHatCDYumGuest(RedHatCDGuest):
         success = False
         while count > 0:
             try:
-                stdout, stderr, retcode = self.guest_execute_command(guestaddr, 'ls', timeout=1)
+                self.guest_execute_command(guestaddr, 'ls', timeout=1)
                 self.log.debug("Succeeded")
                 success = True
                 break
