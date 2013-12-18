@@ -105,7 +105,7 @@ class Repository(object):
     (all remaining properties are optional with defaults in parentheses)
     (yum specific)
     signed     - Whether this repository is signed (no)
-    persistent - Whether this repository should remain in the final
+    persisted  - Whether this repository should remain in the final
                  image (yes)
     sslverify  - Whether yum should check the server cert against known CA
                  certs (no)
@@ -117,7 +117,7 @@ class Repository(object):
     trusted      - Wether this repository is trusted, skips GPG checks if on (no)
     arch         - Used for which architectures information should be downloaded (None)
     """
-    def __init__(self, name, url, signed, persistent, sslverify, distribution, components,
+    def __init__(self, name, url, signed, persisted, sslverify, distribution, components,
                  keyserver, key, trusted, arch):
         self.name = name
         self.url = url
@@ -497,9 +497,9 @@ class TDL(object):
                 raise oz.OzException.OzException("Repositories cannot be localhost, since they must be reachable from the guest operating system")
 
             # yum specific
-            signed = _get_optional_repo_bool(repo, 'signed')
+            signed = _get_optional_repo_bool(repo, 'signed', default='no')
             persist = _get_optional_repo_bool(repo, 'persisted', default='yes')
-            sslverify = _get_optional_repo_bool(repo, 'sslverify')
+            sslverify = _get_optional_repo_bool(repo, 'sslverify', default='no')
 
             # apt specific
             distribution = _xml_get_value(repo, 'distribution', 'distribution', optional=True)
