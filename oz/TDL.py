@@ -116,9 +116,10 @@ class Repository(object):
     key          - Which GPG key packages are signed with (None)
     trusted      - Wether this repository is trusted, skips GPG checks if on (no)
     arch         - Used for which architectures information should be downloaded (None)
+    source       - If deb-src should be added to the list file as well (False)
     """
     def __init__(self, name, url, signed, persisted, sslverify, distribution, components,
-                 keyserver, key, trusted, arch):
+                 keyserver, key, trusted, arch, source):
         self.name = name
         self.url = url
         self.signed = signed
@@ -130,6 +131,7 @@ class Repository(object):
         self.key = key
         self.trusted = trusted
         self.arch = arch
+        self.source = source
 
 class Package(object):
     """
@@ -508,6 +510,7 @@ class TDL(object):
             key = _xml_get_value(repo, 'key', 'key', optional=True)
             trusted = _get_optional_repo_bool(repo, 'trusted', default='no')
             arch = _xml_get_value(repo, 'arch', 'arch', optional=True)
+            source = _get_optional_repo_bool(repo, 'source', 'no')
 
             if keyserver and not key:
                 raise oz.OzException.OzException('A key is required with keyserver')
@@ -515,7 +518,7 @@ class TDL(object):
             # no need to delete - if the name matches we just overwrite here
             self.repositories[name] = Repository(name, url, signed, persist,
                                                  sslverify, distribution, components,
-                                                 keyserver, key, trusted, arch)
+                                                 keyserver, key, trusted, arch, source)
 
     def _add_isoextras(self, extraspath, element_type):
         """
